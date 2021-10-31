@@ -30,9 +30,9 @@ class ClothModel(Model):
         super(ClothModel, self).__init__()
         # with self._enter_variable_scope():
         self.model = model
-        self._output_normalizer = normalization_tf2.Normalizer(size=3)
-        self._node_normalizer = normalization_tf2.Normalizer(size=3 + common.NodeType.SIZE)
-        self._edge_normalizer = normalization_tf2.Normalizer(size=7)
+        self._output_normalizer = normalization.Normalizer(size=3)
+        self._node_normalizer = normalization.Normalizer(size=3 + common.NodeType.SIZE)
+        self._edge_normalizer = normalization.Normalizer(size=7)
 
     def _build_graph(self, inputs, training=False):
         """Builds input graph."""
@@ -53,31 +53,39 @@ class ClothModel(Model):
             relative_mesh_pos,
             tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
 
-        mesh_edges = core_model_tf2.EdgeSet(
+        mesh_edges = core_model.EdgeSet(
             features=self._edge_normalizer(edge_features, training=training),
             receivers=receivers,
             senders=senders)
 
-        return core_model_tf2.MultiGraph(self._node_normalizer(node_features, training=training), edge_sets=[mesh_edges])
+        return core_model.MultiGraph(self._node_normalizer(node_features, training=training), edge_sets=[mesh_edges])
 
-    def call(self, inputs, training=False):
-        graph = self._build_graph(inputs, training=training)
+    def call(self, graph, training=False):
+        # graph = self._build_graph(inputs, training=training)
+        # output = self.model(graph, training=training)
+        # return output
+
+        # normalize node and edge features
+        new_node_features = self._node_normalizer(graph.node_features, training=training)
+        new_edge_sets = [graph.edge_sets[0]._replace(features=self._edge_normalizer(graph.edge_sets[0].features, training=training))]
+        graph = core_model.MultiGraph(new_node_features, new_edge_sets)
+
         output = self.model(graph, training=training)
         return output
 
-    def loss(self, inputs):
+    def loss(self, graph, frame):
         """L2 loss on position."""
-        network_output = self(inputs, training=True)
+        network_output = self(graph, training=True)
 
         # build target acceleration
-        cur_position = inputs['world_pos']
-        prev_position = inputs['prev|world_pos']
-        target_position = inputs['target|world_pos']
+        cur_position = frame['world_pos']
+        prev_position = frame['prev|world_pos']
+        target_position = frame['target|world_pos']
         target_acceleration = target_position - 2 * cur_position + prev_position
         target_normalized = self._output_normalizer(target_acceleration, training=True)
 
         # build loss
-        loss_mask = tf.cast(tf.equal(inputs['node_type'][:, 0], common.NodeType.NORMAL), tf.float32)
+        loss_mask = tf.cast(tf.equal(frame['node_type'][:, 0], common.NodeType.NORMAL), tf.float32)
         error = tf.reduce_sum(tf.math.square(target_normalized - network_output), axis=1)
         loss = tf.reduce_mean(error * loss_mask)
         return loss

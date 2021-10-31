@@ -68,10 +68,10 @@ def load_dataset(path, split, fields, add_history, noise_scale, noise_gamma):
     dataset = dataset.map(partial(add_targets, fields=fields, add_history=add_history), num_parallel_calls=8)
 
     dataset = dataset.flat_map(tf.data.Dataset.from_tensor_slices)
-    dataset = dataset.map(partial(add_noise, fields=fields, scale=noise_scale, gamma=noise_gamma), num_parallel_calls=8)
-    dataset = dataset.shuffle(10000)
     dataset = dataset.repeat(None)
-    dataset = dataset.prefetch(100)
+    dataset = dataset.shuffle(10000)
+    dataset = dataset.map(partial(add_noise, fields=fields, scale=noise_scale, gamma=noise_gamma), num_parallel_calls=8)
+    # dataset = dataset.prefetch(16)
 
     return dataset
 
