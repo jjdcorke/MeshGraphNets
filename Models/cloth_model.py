@@ -28,43 +28,13 @@ class ClothModel(Model):
     """Model for static cloth simulation."""
     def __init__(self, model):
         super(ClothModel, self).__init__()
-        # with self._enter_variable_scope():
+
         self.model = model
-        self._output_normalizer = normalization.Normalizer(size=3)
-        self._node_normalizer = normalization.Normalizer(size=3 + common.NodeType.SIZE)
-        self._edge_normalizer = normalization.Normalizer(size=7)
-
-    def _build_graph(self, inputs, training=False):
-        """Builds input graph."""
-        # construct graph nodes
-        velocity = inputs['world_pos'] - inputs['prev|world_pos']
-        node_type = tf.one_hot(inputs['node_type'][:, 0], common.NodeType.SIZE)
-        node_features = tf.concat([velocity, node_type], axis=-1)
-
-        # construct graph edges
-        senders, receivers = common.triangles_to_edges(inputs['cells'])
-        relative_world_pos = (tf.gather(inputs['world_pos'], senders) -
-                              tf.gather(inputs['world_pos'], receivers))
-        relative_mesh_pos = (tf.gather(inputs['mesh_pos'], senders) -
-                             tf.gather(inputs['mesh_pos'], receivers))
-        edge_features = tf.concat([
-            relative_world_pos,
-            tf.norm(relative_world_pos, axis=-1, keepdims=True),
-            relative_mesh_pos,
-            tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
-
-        mesh_edges = core_model.EdgeSet(
-            features=self._edge_normalizer(edge_features, training=training),
-            receivers=receivers,
-            senders=senders)
-
-        return core_model.MultiGraph(self._node_normalizer(node_features, training=training), edge_sets=[mesh_edges])
+        self._output_normalizer = normalization.Normalizer()
+        self._node_normalizer = normalization.Normalizer()
+        self._edge_normalizer = normalization.Normalizer()
 
     def call(self, graph, training=False):
-        # graph = self._build_graph(inputs, training=training)
-        # output = self.model(graph, training=training)
-        # return output
-
         # normalize node and edge features
         new_node_features = self._node_normalizer(graph.node_features, training=training)
         new_edge_sets = [graph.edge_sets[0]._replace(features=self._edge_normalizer(graph.edge_sets[0].features, training=training))]
@@ -90,12 +60,13 @@ class ClothModel(Model):
         loss = tf.reduce_mean(error * loss_mask)
         return loss
 
-    def _update(self, inputs, output):
+    def predict(self, graph, frame):
         """Integrate model outputs."""
+        output = self(graph, training=False)
         acceleration = self._output_normalizer.inverse(output)
 
         # integrate forward
-        cur_position = inputs['world_pos']
-        prev_position = inputs['prev|world_pos']
+        cur_position = frame['world_pos']
+        prev_position = frame['prev|world_pos']
         position = 2 * cur_position + acceleration - prev_position
         return position

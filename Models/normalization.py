@@ -17,20 +17,26 @@
 """Online data normalization."""
 
 import tensorflow as tf
-from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Layer
 
 
-class Normalizer(Model):
+class Normalizer(Layer):
     """Feature normalizer that accumulates statistics online."""
 
-    def __init__(self, size, max_accumulations=10**6, std_epsilon=1e-8):
+    def __init__(self, max_accumulations=1000000, std_epsilon=1e-8):
         super(Normalizer, self).__init__()
         self._max_accumulations = max_accumulations
         self._std_epsilon = std_epsilon
-        self._acc_count = tf.Variable(0, dtype=tf.float32, trainable=False)
-        self._num_accumulations = tf.Variable(0, dtype=tf.float32, trainable=False)
-        self._acc_sum = tf.Variable(tf.zeros(size, tf.float32), trainable=False)
-        self._acc_sum_squared = tf.Variable(tf.zeros(size, tf.float32), trainable=False)
+
+    def build(self, input_shape):
+        self._acc_count = tf.Variable(0, dtype=tf.float32, name='acc_count', trainable=False,
+                                      aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
+        self._num_accumulations = tf.Variable(0, dtype=tf.float32, name='num_acc', trainable=False,
+                                              aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
+        self._acc_sum = tf.Variable(tf.zeros(input_shape[-1], tf.float32), name='acc_sum', trainable=False,
+                                    aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
+        self._acc_sum_squared = tf.Variable(tf.zeros(input_shape[-1], tf.float32), name='acc_sum_squared', trainable=False,
+                                            aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
 
     def call(self, x, training=False):
         if training and self._num_accumulations < self._max_accumulations:

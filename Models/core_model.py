@@ -71,7 +71,6 @@ class GraphNetBlock(Model):
         return self.node_update(tf.concat(features, axis=-1))
 
     def call(self, graph, training=False):
-
         # update edge features
         new_edge_sets = []
         for i, edge_set in enumerate(graph.edge_sets):
@@ -108,7 +107,7 @@ class EncodeProcessDecode(Model):
             self.mp_blocks.append(GraphNetBlock(embed_dims, num_layers, num_edge_types=num_edge_types))
 
         # decoder MLPs
-        self.node_decoder = MLP([embed_dims] * (num_layers - 1) + [output_dims])
+        self.node_decoder = MLP([embed_dims] * (num_layers - 1) + [output_dims], layer_norm=False)
 
     def _encoder(self, graph):
         node_features = self.node_encoder(graph.node_features)

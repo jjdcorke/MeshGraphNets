@@ -27,7 +27,7 @@ from tensorflow.keras.optimizers import Adam
 import common
 import core_model
 import cloth_model
-from dataset import load_dataset
+from dataset import load_dataset_train
 
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -57,21 +57,34 @@ def frame_to_graph(frame):
         tf.norm(relative_world_pos, axis=-1, keepdims=True),
         relative_mesh_pos,
         tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
-    # mesh_edges = core_model.EdgeSet(edge_features, senders, receivers)
 
     del frame['cells']
 
-    # return core_model.MultiGraph(node_features, edge_sets=[mesh_edges]), frame
     return node_features, edge_features, senders, receivers, frame
 
 
-def train():
-    dataset = load_dataset(
+def build_model(model, dataset):
+    """Initialize the model"""
+    node_features, edge_features, senders, receivers, frame = next(iter(dataset))
+    graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
+
+    # call the model once to process all input shapes
+    model(graph)
+
+    # get the number of trainable parameters
+    total = 0
+    for var in model.trainable_weights:
+        total += np.prod(var.shape)
+    print(f'Total trainable parameters: {total}')
+
+
+def train(num_steps=1000000):
+    dataset = load_dataset_train(
         path='data/flag_simple',
         split='train',
         fields=['world_pos'],
         add_history=True,
-        noise_scale=0.003,
+        noise_scale=0.001,
         noise_gamma=0.1
     )
     dataset = dataset.map(frame_to_graph, num_parallel_calls=8)
@@ -85,7 +98,11 @@ def train():
         num_edge_types=1
     )
     model = cloth_model.ClothModel(model)
-    optimizer = Adam(learning_rate=1e-4)
+    lr = tf.keras.optimizers.schedules.ExponentialDecay(1e-4, decay_steps=num_steps // 2, decay_rate=0.1)
+    optimizer = Adam(learning_rate=lr)
+
+    # build the model
+    build_model(model, dataset)
 
     @tf.function(jit_compile=True)
     def warmup(graph, frame):
@@ -102,7 +119,6 @@ def train():
 
         return loss
 
-    num_steps = 1000000
     dataset_iter = iter(dataset)
     train_loop = tqdm(range(num_steps))
     moving_loss = 0
@@ -110,9 +126,9 @@ def train():
         node_features, edge_features, senders, receivers, frame = next(dataset_iter)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        if s == 50:
+        if s == 1100:
             tf.profiler.experimental.start('logdir')
-        elif s == 55:
+        elif s == 1105:
             tf.profiler.experimental.stop()
 
         if s < 1000:
@@ -122,10 +138,10 @@ def train():
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
-        train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.2f}')
+        train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
 
         if s != 0 and s % 50000 == 0:
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', f'weights-step{s:07d}-loss{moving_loss:.4f}.hdf5'))
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'))
 
 
 def main():

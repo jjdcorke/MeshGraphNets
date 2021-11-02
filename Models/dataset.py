@@ -57,7 +57,7 @@ def add_noise(frame, fields, scale, gamma):
     return frame
 
 
-def load_dataset(path, split, fields, add_history, noise_scale, noise_gamma):
+def load_dataset_train(path, split, fields, add_history, noise_scale, noise_gamma):
     with open(os.path.join(path, 'meta.json'), 'r') as f:
         meta = json.load(f)
 
@@ -71,7 +71,19 @@ def load_dataset(path, split, fields, add_history, noise_scale, noise_gamma):
     dataset = dataset.repeat(None)
     dataset = dataset.shuffle(10000)
     dataset = dataset.map(partial(add_noise, fields=fields, scale=noise_scale, gamma=noise_gamma), num_parallel_calls=8)
-    # dataset = dataset.prefetch(16)
+
+    return dataset
+
+
+def load_dataset_eval(path, split, fields, add_history):
+    with open(os.path.join(path, 'meta.json'), 'r') as f:
+        meta = json.load(f)
+
+    dataset = tf.data.TFRecordDataset(os.path.join(path, f'{split}.tfrecord'))
+    dataset = dataset.map(partial(parse, meta=meta), num_parallel_calls=8)
+    dataset = dataset.prefetch(1)
+
+    dataset = dataset.map(partial(add_targets, fields=fields, add_history=add_history), num_parallel_calls=8)
 
     return dataset
 
