@@ -57,7 +57,21 @@ def add_noise(frame, fields, scale, gamma):
     return frame
 
 
-def load_dataset_train(path, split, fields, add_history, noise_scale, noise_gamma):
+def merge(frame):
+    batch_size = tf.shape(frame['world_pos'])[0]
+    num_nodes = frame['world_pos'].shape[1]
+
+    # relabel nodes
+    offset = tf.range(batch_size) * num_nodes
+    frame['cells'] = frame['cells'] + tf.reshape(offset, (batch_size, 1, 1))
+
+    for k in frame:
+        frame[k] = tf.reshape(frame[k], (-1, frame[k].shape[2]))
+
+    return frame
+
+
+def load_dataset_train(path, split, fields, add_history, noise_scale, noise_gamma, batch_size=1):
     with open(os.path.join(path, 'meta.json'), 'r') as f:
         meta = json.load(f)
 
@@ -71,6 +85,10 @@ def load_dataset_train(path, split, fields, add_history, noise_scale, noise_gamm
     dataset = dataset.repeat(None)
     dataset = dataset.shuffle(10000)
     dataset = dataset.map(partial(add_noise, fields=fields, scale=noise_scale, gamma=noise_gamma), num_parallel_calls=8)
+
+    if batch_size > 1:
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(merge, num_parallel_calls=8)
 
     return dataset
 
