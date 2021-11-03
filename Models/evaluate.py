@@ -103,10 +103,20 @@ def rollout(model, initial_frame, num_steps):
     return tf.stack(trajectory)
 
 
-def evaluate(checkpoint_file, num_trajectories, num_steps=None):
+def to_numpy(t):
+    """
+    If t is a Tensor, convert it to a NumPy array; otherwise do nothing
+    """
+    try:
+        return t.to_numpy()
+    except:
+        return t
+
+
+def evaluate(checkpoint_file, num_trajectories):
     dataset = load_dataset_eval(
         path='data/flag_simple',
-        split='train',
+        split='test',
         fields=['world_pos'],
         add_history=True
     )
@@ -128,11 +138,16 @@ def evaluate(checkpoint_file, num_trajectories, num_steps=None):
     preds = []
     for trajectory in dataset.take(num_trajectories):
         initial_frame = {k: v[0] for k, v in trajectory.items()}
-        num_steps = num_steps if num_steps is not None else trajectory['cells'].shape[0]
-        predicted_trajectory = rollout(model, initial_frame, num_steps)
-        preds.append({**trajectory, 'world_pos': predicted_trajectory})
+        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0])
 
-    preds = [{k: v.numpy() for k, v in pred.items()} for pred in preds]
+        error = tf.reduce_mean(tf.square(predicted_trajectory - trajectory['world_pos']), axis=-1)
+        rmse_errors = {f'{horizon}_step_error': tf.math.sqrt(tf.reduce_mean(error[1:horizon + 1])).numpy()
+                       for horizon in [1, 10, 20, 50, 100, 200, 398]}
+        print(f'RMSE Errors: {rmse_errors}')
+
+        preds.append({**trajectory, 'world_pos': predicted_trajectory, 'errors': rmse_errors})
+
+    preds = [{k: to_numpy(v) for k, v in pred.items()} for pred in preds]
 
     Path('results').mkdir(exist_ok=True)
     save_path = os.path.join('results', f'{os.path.split(checkpoint_file)[-1]}.eval')
@@ -144,7 +159,7 @@ def evaluate(checkpoint_file, num_trajectories, num_steps=None):
 
 
 def main():
-    evaluate('checkpoints/weights-step0800000-loss0.0950.hdf5', 1)
+    evaluate('checkpoints/weights-step2100000-loss0.0680.hdf5', 10)
 
 
 if __name__ == '__main__':
