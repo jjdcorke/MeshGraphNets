@@ -14,7 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-"""Commonly used data structures and functions."""
+"""
+Commonly used data structures and functions.
+"""
 
 import enum
 import tensorflow.compat.v1 as tf
@@ -32,11 +34,14 @@ class NodeType(enum.IntEnum):
 
 
 def triangles_to_edges(faces):
-  """Computes mesh edges from triangles."""
+  """
+  Computes mesh edges from triangles.
+  """
   # collect edges from triangles
   edges = tf.concat([faces[:, 0:2],
                      faces[:, 1:3],
                      tf.stack([faces[:, 2], faces[:, 0]], axis=1)], axis=0)
+
   # those edges are sometimes duplicated (within the mesh) and sometimes
   # single (at the mesh boundary).
   # sort & pack edges as single tf.int64
