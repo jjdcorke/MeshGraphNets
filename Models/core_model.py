@@ -48,6 +48,27 @@ class MLP(Model):
         return x
 
 
+class LRGA(Model):
+    def __init__(self, kappa):
+        super(LRGA, self).__init__()
+
+        self.m1 = MLP([kappa], layer_norm=False)
+        self.m2 = MLP([kappa], layer_norm=False)
+        self.m3 = MLP([kappa], layer_norm=False)
+        self.m4 = MLP([kappa], layer_norm=False)
+
+    def call(self, x, training=False):
+        m1 = tf.nn.relu(self.m1(x))
+        m2 = tf.nn.relu(self.m1(x))
+        m3 = tf.nn.relu(self.m1(x))
+        m4 = tf.nn.relu(self.m1(x))
+
+        norm = tf.reduce_sum(tf.reduce_sum(m1, axis=0) * tf.reduce_sum(m2, axis=0)) / m1.shape[0]
+        attn = tf.matmul(m1, tf.matmul(tf.transpose(m2), m3)) / norm
+
+        return tf.concat([attn, m4], axis=1)
+
+
 class GraphNetBlock(Model):
     """
     A message-passing block
@@ -131,6 +152,93 @@ class GraphNetBlock(Model):
         return MultiGraph(new_node_features, new_edge_sets)
 
 
+class GraphNetBlockLRGA(Model):
+    """
+    A message-passing block
+    """
+    def __init__(self, embed_dims, num_layers, lrga_dims=32, num_edge_types=2):
+        """
+        Create a message-passing block
+        :param embed_dims: int; size of the hidden layers and the latent space
+        :param num_layers: int; number of layers in the MLPs
+        :param num_edge_types: int; number of edge types
+        """
+        super(GraphNetBlockLRGA, self).__init__()
+        self.embed_dims = embed_dims
+        self.num_layers = num_layers
+        self.lrga_dims = lrga_dims
+        self.num_edge_types = num_edge_types
+
+        # MLP for the node update rule
+        self.node_update = MLP([embed_dims] * num_layers)
+        self.node_lrga = LRGA(lrga_dims)
+        self.downsample = MLP([embed_dims])
+
+        # separate MLPs for the edge update rules
+        self.edge_updates = [MLP([embed_dims] * num_layers) for _ in range(num_edge_types)]
+
+    def _update_edge_features(self, node_features, edge_set, index):
+        """
+        Get the new edge features by aggregating the features of the
+            two adjacent nodes
+        :param node_features: Tensor with shape (n, d), where n is the number of nodes
+                              and d is the number of input dims
+        :param edge_set: EdgeSet; the edge set to update
+        :param index: int; the index of the edge set in MultiGraph.edge_sets
+        :return: Tensor with shape (m, d2), where m is the number of edges and
+                 d2 is the number of output dims
+        """
+        sender_features = tf.gather(node_features, edge_set.senders)
+        receiver_features = tf.gather(node_features, edge_set.receivers)
+        features = [sender_features, receiver_features, edge_set.features]
+        return self.edge_updates[index](tf.concat(features, axis=-1))
+
+    def _update_node_features(self, node_features, edge_sets):
+        """
+        Get the new node features by aggregating the features of all
+            adjacent edges
+        :param node_features: Tensor with shape (n, d), where n is the number of nodes
+                              and d is the number of input dims
+        :param edge_sets: list of EdgeSets; all edge sets in the graph
+        :return: Tensor with shape (n, d2), where n is the number of nodes and d2
+                 is the number of output dims
+        """
+        num_nodes = tf.shape(node_features)[0]
+        features = [node_features]
+        for edge_set in edge_sets:
+            # perform sum aggregation
+            features.append(tf.math.unsorted_segment_sum(edge_set.features,
+                                                         edge_set.receivers,
+                                                         num_nodes))
+
+        new_features = self.node_update(tf.concat(features, axis=-1))
+        lrga_features = self.node_lrga(node_features)
+        return self.downsample(tf.concat([new_features, lrga_features], axis=-1))
+
+    def call(self, graph, training=False):
+        """
+        Perform the message-passing on the graph
+        :param graph: MultiGraph; the input graph
+        :param training: unused
+        :return: MultiGraph; the resulting graph after updating features
+        """
+        # update edge features
+        new_edge_sets = []
+        for i, edge_set in enumerate(graph.edge_sets):
+            updated_features = self._update_edge_features(graph.node_features, edge_set, i)
+            new_edge_sets.append(edge_set._replace(features=updated_features))
+
+        # update node features
+        new_node_features = self._update_node_features(graph.node_features, new_edge_sets)
+
+        # add residual connections
+        new_node_features = new_node_features + graph.node_features
+        new_edge_sets = [es._replace(features=es.features + old_es.features)
+                         for es, old_es in zip(new_edge_sets, graph.edge_sets)]
+
+        return MultiGraph(new_node_features, new_edge_sets)
+
+
 class EncodeProcessDecode(Model):
     """
     The composite 3-part architecture consisting of an encoder, a processor,
@@ -188,6 +296,77 @@ class EncodeProcessDecode(Model):
         """
         return self.node_decoder(graph.node_features)
  
+    def call(self, graph, training=False):
+        """
+        Pass a graph through the model
+        :param graph: MultiGraph; represents the mesh with raw node and edge features
+        :param training: unused
+        :return: Tensor with shape (n, d), where n is the number of nodes and d
+                 is the number of output dims; represents the node update
+        """
+        graph = self._encoder(graph)
+        for i in range(self.num_iterations):
+            graph = self.mp_blocks[i](graph)
+        return self._decoder(graph)
+
+
+
+class EncodeProcessDecodeLRGA(Model):
+    """
+    The composite 3-part architecture consisting of an encoder, a processor,
+        and a decoder
+    """
+    def __init__(self, output_dims, embed_dims, num_layers, num_iterations, num_edge_types=2):
+        """
+        Create a model
+        :param output_dims: int; number of output dimensions
+        :param embed_dims: int; size of all hidden layers
+        :param num_layers: int; number of layers in all MLPs
+        :param num_iterations: int; number of message-passing iterations
+        :param num_edge_types: int; number of edge types
+        """
+        super(EncodeProcessDecodeLRGA, self).__init__()
+        self.output_dims = output_dims
+        self.embed_dims = embed_dims
+        self.num_layers = num_layers
+        self.num_iterations = num_iterations
+        self.num_edge_types = num_edge_types
+
+        # encoder MLPs
+        self.node_encoder = MLP([embed_dims] * num_layers)
+        self.edge_encoders = [MLP([embed_dims] * num_layers) for _ in range(num_edge_types)]
+
+        # graph message-passing blocks
+        self.mp_blocks = []
+        for _ in range(num_iterations):
+            self.mp_blocks.append(GraphNetBlockLRGA(embed_dims, num_layers, lrga_dims=32, num_edge_types=num_edge_types))
+
+        # decoder MLPs
+        self.node_decoder = MLP([embed_dims] * (num_layers - 1) + [output_dims], layer_norm=False)
+
+    def _encoder(self, graph):
+        """
+        Map the input features onto a latent space for processing
+        :param graph: MultiGraph; the input graph representing the raw mesh features
+        :return: MultiGraph; the new latent graph
+        """
+        node_features = self.node_encoder(graph.node_features)
+        edge_sets = []
+        for i, edge_set in enumerate(graph.edge_sets):
+            edge_features = self.edge_encoders[i](edge_set.features)
+            edge_sets.append(edge_set._replace(features=edge_features))
+
+        return MultiGraph(node_features, edge_sets)
+
+    def _decoder(self, graph):
+        """
+        Readout of the final node features
+        :param graph: MultiGraph; the graph after all message-passing iterations
+        :return: Tensor with shape (n, d), where n is the number of nodes and d
+                 is the number of output dims; represents the node update
+        """
+        return self.node_decoder(graph.node_features)
+
     def call(self, graph, training=False):
         """
         Pass a graph through the model
