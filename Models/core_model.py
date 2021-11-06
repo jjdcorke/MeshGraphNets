@@ -59,9 +59,9 @@ class LRGA(Model):
 
     def call(self, x, training=False):
         m1 = tf.nn.relu(self.m1(x))
-        m2 = tf.nn.relu(self.m1(x))
-        m3 = tf.nn.relu(self.m1(x))
-        m4 = tf.nn.relu(self.m1(x))
+        m2 = tf.nn.relu(self.m2(x))
+        m3 = tf.nn.relu(self.m3(x))
+        m4 = tf.nn.relu(self.m4(x))
 
         norm = tf.reduce_sum(tf.reduce_sum(m1, axis=0) * tf.reduce_sum(m2, axis=0)) / m1.shape[0]
         attn = tf.matmul(m1, tf.matmul(tf.transpose(m2), m3)) / norm

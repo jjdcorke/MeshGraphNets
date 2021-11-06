@@ -149,7 +149,7 @@ def evaluate(checkpoint_file, num_trajectories, wind=False):
         add_history=True
     )
 
-    model = core_model.EncodeProcessDecode(
+    model = core_model.EncodeProcessDecodeLRGA(
         output_dims=3,
         embed_dims=128,
         num_layers=3,
