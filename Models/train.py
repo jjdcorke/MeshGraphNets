@@ -63,19 +63,29 @@ def frame_to_graph(frame):
     return node_features, edge_features, senders, receivers, frame
 
 
-def build_model(model, dataset):
+def build_model(model, optimizer, dataset, checkpoint=None):
     """Initialize the model"""
     node_features, edge_features, senders, receivers, frame = next(iter(dataset))
     graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
     # call the model once to process all input shapes
-    model(graph)
+    model.loss(graph, frame)
 
     # get the number of trainable parameters
     total = 0
     for var in model.trainable_weights:
         total += np.prod(var.shape)
     print(f'Total trainable parameters: {total}')
+
+    if checkpoint:
+        opt_weights = np.load(f'{checkpoint}_optimizer.npy'), allow_pickle=True)
+
+        dummy_grads = [tf.zeros_like(w) for w in model.trainable_weights]
+        optimizer.apply_gradients(zip(dummy_grads, model.trainable_weights))
+
+        # only now set the weights of the optimizer and model
+        optimizer.set_weights(opt_weights)
+        model.load_weights(checkpoint, by_name=True)
 
 
 def train(num_steps=1000000):
@@ -102,7 +112,8 @@ def train(num_steps=1000000):
     optimizer = Adam(learning_rate=lr)
 
     # build the model
-    build_model(model, dataset)
+    build_model(model, optimizer, dataset)
+    # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
     @tf.function(jit_compile=True)
     def warmup(graph, frame):
@@ -141,7 +152,9 @@ def train(num_steps=1000000):
         train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
 
         if s != 0 and s % 50000 == 0:
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'))
+            filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
 
 def main():
