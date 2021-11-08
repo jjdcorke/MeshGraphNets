@@ -154,7 +154,9 @@ def train(num_steps=1000000, checkpoint = None):
             loss = train_step(graph, frame)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
-        tf.summary.scalar('loss',loss,step = s) #s for training session
+
+        if s%500 == 0:
+            tf.summary.scalar('loss',loss,step = s) #s for training session
 
         train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
 
