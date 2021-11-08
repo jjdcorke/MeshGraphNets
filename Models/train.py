@@ -29,6 +29,8 @@ import core_model
 import cloth_model
 from dataset import load_dataset_train
 
+import datetime
+
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 try:
@@ -78,7 +80,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
     print(f'Total trainable parameters: {total}')
 
     if checkpoint:
-        opt_weights = np.load(f'{checkpoint}_optimizer.npy'), allow_pickle=True)
+        opt_weights = np.load(f'{checkpoint}_optimizer.npy', allow_pickle=True)
 
         dummy_grads = [tf.zeros_like(w) for w in model.trainable_weights]
         optimizer.apply_gradients(zip(dummy_grads, model.trainable_weights))
@@ -88,7 +90,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def train(num_steps=1000000):
+def train(num_steps=1000000, checkpoint = None):
     dataset = load_dataset_train(
         path='data/flag_simple',
         split='train',
@@ -111,8 +113,12 @@ def train(num_steps=1000000):
     lr = tf.keras.optimizers.schedules.ExponentialDecay(1e-4, decay_steps=num_steps // 2, decay_rate=0.1)
     optimizer = Adam(learning_rate=lr)
 
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir = 'Visualization/logs/' + current_time + '/train'
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+
     # build the model
-    build_model(model, optimizer, dataset)
+    build_model(model, optimizer, dataset, checkpoint = checkpoint)
     # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
     @tf.function(jit_compile=True)
@@ -148,13 +154,22 @@ def train(num_steps=1000000):
             loss = train_step(graph, frame)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
+        tf.summary.scalar('loss',loss,step = s) #s for training session
 
         train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
+
+
+
+        
+
+
+
 
         if s != 0 and s % 50000 == 0:
             filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
             model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', filename))
             np.save(os.path.join(os.path.dirname(__file__), 'checkpoints', f'{filename}_optimizer.npy'), optimizer.get_weights())
+
 
 
 def main():
