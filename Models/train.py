@@ -78,7 +78,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
     print(f'Total trainable parameters: {total}')
 
     if checkpoint:
-        opt_weights = np.load(f'{checkpoint}_optimizer.npy'), allow_pickle=True)
+        opt_weights = np.load(f'{checkpoint}_optimizer.npy', allow_pickle=True)
 
         dummy_grads = [tf.zeros_like(w) for w in model.trainable_weights]
         optimizer.apply_gradients(zip(dummy_grads, model.trainable_weights))
