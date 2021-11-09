@@ -101,6 +101,7 @@ def train(num_steps=1000000, checkpoint = None):
     )
     dataset = dataset.map(frame_to_graph, num_parallel_calls=8)
     dataset = dataset.prefetch(16)
+    
 
     model = core_model.EncodeProcessDecode(
         output_dims=3,
@@ -114,7 +115,7 @@ def train(num_steps=1000000, checkpoint = None):
     optimizer = Adam(learning_rate=lr)
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = 'Visualization/logs/' + current_time + '/train'
+    train_log_dir = 'Visualization/logs/train/' + current_time
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 
     # build the model
@@ -153,6 +154,15 @@ def train(num_steps=1000000, checkpoint = None):
         else:
             loss = train_step(graph, frame)
 
+        if s == 1:
+            tf.summary.trace_on(graph = True, profiler = True)
+            loss = train_step(graph, frame)
+            with train_summary_writer.as_default():
+                tf.summary.trace_export(
+                    name="trainstep_trace",
+                    step=s,
+                    profiler_outdir=train_log_dir)
+
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
         if s%500 == 0:
@@ -176,6 +186,7 @@ def train(num_steps=1000000, checkpoint = None):
 
 
 def main():
+    
     train()
 
 
