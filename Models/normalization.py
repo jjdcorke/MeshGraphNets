@@ -10,6 +10,7 @@ class Normalizer(Layer):
     """
     Feature normalizer that accumulates statistics online
     """
+    @tf.function
     def __init__(self, max_accumulations=1000000, std_epsilon=1e-8):
         """
         Instantiate a normalization layer
@@ -21,7 +22,7 @@ class Normalizer(Layer):
         super(Normalizer, self).__init__()
         self._max_accumulations = max_accumulations
         self._std_epsilon = std_epsilon
-
+    @tf.function
     def build(self, input_shape):
         """
         Create the variables used by the layer. This method is called automatically
@@ -37,7 +38,7 @@ class Normalizer(Layer):
                                     aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
         self._acc_sum_squared = tf.Variable(tf.zeros(input_shape[-1], tf.float32), name='acc_sum_squared', trainable=False,
                                             aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
-
+    @tf.function
     def call(self, x, training=False):
         """
         Normalize the features of x independent of other samples, and add
@@ -53,7 +54,7 @@ class Normalizer(Layer):
             self._num_accumulations.assign_add(1.)
 
         return (x - self._mean()) / self._std_with_epsilon()
-
+    @tf.function
     def inverse(self, normalized_batch_data):
         """
         Inverse transformation of the normalizer
@@ -61,7 +62,7 @@ class Normalizer(Layer):
         :return: the new un-normalized Tensor with the same shape
         """
         return normalized_batch_data * self._std_with_epsilon() + self._mean()
-
+    @tf.function
     def _mean(self):
         """
         Get the running mean of inputs through this layer
@@ -69,7 +70,7 @@ class Normalizer(Layer):
         """
         safe_count = tf.maximum(self._acc_count, 1.)
         return self._acc_sum / safe_count
-
+    @tf.function
     def _std_with_epsilon(self):
         """
         Get the running standard deviation of inputs through this layer

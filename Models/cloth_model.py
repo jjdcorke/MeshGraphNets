@@ -10,10 +10,13 @@ import core_model
 import normalization
 
 
+
+
 class ClothModel(Model):
     """
     Model for static cloth simulation
     """
+    @tf.function
     def __init__(self, model):
         """
         Create an instance of the cloth model
@@ -31,6 +34,7 @@ class ClothModel(Model):
         # normalizer for the raw edge features before the encoder MLP
         self._edge_normalizer = normalization.Normalizer()
 
+    @tf.function
     def call(self, graph, training=False):
         """
         Pass a graph through the model
@@ -48,7 +52,7 @@ class ClothModel(Model):
         output = self.model(graph, training=training)
 
         return output
-
+    @tf.function
     def loss(self, graph, frame):
         """
         The loss function to use when training the model; the L2 distance
@@ -73,6 +77,7 @@ class ClothModel(Model):
 
         return loss
 
+    @tf.function
     def predict(self, graph, frame):
         """
         Predict the new position of the mesh after a single time-step

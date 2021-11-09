@@ -32,7 +32,7 @@ class NodeType(enum.IntEnum):
   WALL_BOUNDARY = 6
   SIZE = 9
 
-
+@tf.function
 def triangles_to_edges(faces):
   """
   Computes mesh edges from triangles.
