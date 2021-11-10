@@ -34,7 +34,7 @@ class ClothModel(Model):
         # normalizer for the raw edge features before the encoder MLP
         self._edge_normalizer = normalization.Normalizer()
 
-    
+
     def call(self, graph, training=False):
         """
         Pass a graph through the model

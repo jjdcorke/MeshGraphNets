@@ -62,6 +62,24 @@ def generate_all():
         plot_cloth(data, os.path.join(output_path, f'{i:03d}.mp4'))
 
 
+def avg_rmse():
+    results_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'results')
+    results_prefixes = ['weights-step2700000-loss0.0581.hdf5', 'weights-step2300000-loss0.04908.hdf5']
+
+    for prefix in results_prefixes:
+        all_errors = []
+        for i in range(100):
+            with open(os.path.join(results_path, f'{prefix}_{i:03d}.eval'), 'rb') as f:
+                data = pickle.load(f)
+                all_errors.append(data['errors'])
+
+        keys = list(all_errors[0].keys())
+        all_errors = {k: np.array([errors[k] for errors in all_errors]) for k in keys}
+
+        for k, v in all_errors.items():
+            print(prefix, k, np.mean(v))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("datafile")
