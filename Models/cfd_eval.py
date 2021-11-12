@@ -1,0 +1,126 @@
+# Lint as: python3
+# pylint: disable=g-bad-file-header
+# Copyright 2020 DeepMind Technologies Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or  implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
+import os
+import pickle
+from pathlib import Path
+
+from tqdm import tqdm
+import numpy as np
+import tensorflow as tf
+
+import common
+import core_model
+import cfg_model
+from dataset import load_dataset_eval
+
+
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+try:
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+except RuntimeError as e:
+    print(e)
+
+
+model_dir = os.path.dirname(__file__)
+
+
+
+
+def frame_to_graph(frame):
+    """Builds input graph."""
+    # construct graph nodes
+    
+    node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
+    node_features = tf.concat([frame['velocity'], node_type], axis=-1)
+
+    # construct graph edges
+    senders, receivers = common.triangles_to_edges(frame['cells'])
+    relative_mesh_pos = (tf.gather(frame['mesh_pos'], senders) -
+                         tf.gather(frame['mesh_pos'], receivers))
+    edge_features = tf.concat([
+        relative_mesh_pos,
+        tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
+
+    
+    del frame['cells']
+    
+    return node_features, edge_features, senders, receivers, frame
+
+def build_model(model, dataset):
+    
+    traj = next(iter(dataset))
+    frame = {k: v[0] for k, v in traj.items()}
+    node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
+    graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
+
+    # call the model once to process all input shapes
+    model.loss(graph, frame)
+
+    # get the number of trainable parameters
+    total = 0
+    for var in model.trainable_weights:
+        total += np.prod(var.shape)
+    print(f'Total trainable parameters: {total}')
+    
+
+def rollout(model, initial_frame, num_steps):
+     """Rolls out a model trajectory."""
+     node_type = initial_frame['node_type'][:, 0]
+     mask = tf.logical_or(tf.equal(node_type, NodeType.NORMAL),
+                       tf.equal(node_type, NodeType.OUTFLOW))
+     
+     # someone continue where I Left off
+
+  
+
+
+  
+def to_numpy(t):
+    """
+    If t is a Tensor, convert it to a NumPy array; otherwise do nothing
+    """
+    try:
+        return t.numpy()
+    except:
+        return t   
+    
+
+
+
+#Deepmind part to change
+
+def evaluate(model, inputs):
+  """Performs model rollouts and create stats."""
+  initial_state = {k: v[0] for k, v in inputs.items()}
+  num_steps = inputs['cells'].shape[0]
+  prediction = _rollout(model, initial_state, num_steps)
+
+  error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
+  scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
+             for horizon in [1, 10, 20, 50, 100, 200]}
+  traj_ops = {
+      'faces': inputs['cells'],
+      'mesh_pos': inputs['mesh_pos'],
+      'gt_velocity': inputs['velocity'],
+      'pred_velocity': prediction
+  }
+  return scalars, traj_ops
+
+
+
