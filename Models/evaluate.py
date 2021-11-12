@@ -38,6 +38,9 @@ except RuntimeError as e:
     print(e)
 
 
+model_dir = os.path.dirname(__file__)
+
+
 def frame_to_graph(frame):
     """Builds input graph."""
 
@@ -108,14 +111,14 @@ def to_numpy(t):
     If t is a Tensor, convert it to a NumPy array; otherwise do nothing
     """
     try:
-        return t.to_numpy()
+        return t.numpy()
     except:
         return t
 
 
 def evaluate(checkpoint_file, num_trajectories):
     dataset = load_dataset_eval(
-        path='data/flag_simple',
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='test',
         fields=['world_pos'],
         add_history=True
@@ -135,8 +138,8 @@ def evaluate(checkpoint_file, num_trajectories):
 
     model.load_weights(checkpoint_file, by_name=True)
 
-    preds = []
-    for trajectory in dataset.take(num_trajectories):
+    Path(os.path.join(model_dir, 'results', os.path.split(checkpoint_file)[-1])).mkdir(exist_ok=True)
+    for i, trajectory in enumerate(dataset.take(num_trajectories)):
         initial_frame = {k: v[0] for k, v in trajectory.items()}
         predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0])
 
@@ -145,21 +148,17 @@ def evaluate(checkpoint_file, num_trajectories):
                        for horizon in [1, 10, 20, 50, 100, 200, 398]}
         print(f'RMSE Errors: {rmse_errors}')
 
-        preds.append({**trajectory, 'world_pos': predicted_trajectory, 'errors': rmse_errors})
+        data = {**trajectory, 'true_world_pos': trajectory['world_pos'], 'pred_world_pos': predicted_trajectory, 'errors': rmse_errors}
+        data = {k: to_numpy(v) for k, v in data.items()}
 
-    preds = [{k: to_numpy(v) for k, v in pred.items()} for pred in preds]
-
-    Path('results').mkdir(exist_ok=True)
-    save_path = os.path.join('results', f'{os.path.split(checkpoint_file)[-1]}.eval')
-    with open(save_path, 'wb') as f:
-        pickle.dump(preds, f)
-        print(f'Evaluation results saved in {save_path}')
-
-    return preds
+        save_path = os.path.join(model_dir, 'results', os.path.split(checkpoint_file)[-1], f'{i:03d}.eval')
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+            print(f'Evaluation results saved in {save_path}')
 
 
 def main():
-    evaluate('checkpoints/weights-step2100000-loss0.0680.hdf5', 10)
+    evaluate(os.path.join(model_dir, 'checkpoints/weights-step2900000-loss128.67308.hdf5'), 100)
 
 
 if __name__ == '__main__':

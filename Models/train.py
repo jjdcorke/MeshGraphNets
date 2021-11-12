@@ -92,7 +92,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
 
 def train(num_steps=1000000, checkpoint = None):
     dataset = load_dataset_train(
-        path='data/flag_simple',
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
         fields=['world_pos'],
         add_history=True,
