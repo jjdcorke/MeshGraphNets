@@ -89,7 +89,7 @@ def load_dataset_eval(path, split, fields, add_history):
 
 
 def main():
-    load_dataset(os.path.join('data', 'flag_simple'), 'valid', fields=['world_pos'],
+    load_dataset_train(os.path.join('data', 'flag_simple'), 'valid', fields=['world_pos'],
                  add_history=True, noise_scale=0.003, noise_gamma=0.1)
 
 

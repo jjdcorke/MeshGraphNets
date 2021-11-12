@@ -10,10 +10,13 @@ import core_model
 import normalization
 
 
+
+
 class ClothModel(Model):
     """
     Model for static cloth simulation
     """
+
     def __init__(self, model):
         """
         Create an instance of the cloth model
@@ -31,6 +34,7 @@ class ClothModel(Model):
         # normalizer for the raw edge features before the encoder MLP
         self._edge_normalizer = normalization.Normalizer()
 
+    
     def call(self, graph, training=False):
         """
         Pass a graph through the model
@@ -72,6 +76,7 @@ class ClothModel(Model):
         loss = tf.reduce_mean(error * loss_mask)
 
         return loss
+
 
     @tf.function(jit_compile=True)
     def predict(self, graph, frame):

@@ -10,6 +10,7 @@ class Normalizer(Layer):
     """
     Feature normalizer that accumulates statistics online
     """
+    
     def __init__(self, max_accumulations=1000000, std_epsilon=1e-8):
         """
         Instantiate a normalization layer
@@ -21,7 +22,7 @@ class Normalizer(Layer):
         super(Normalizer, self).__init__()
         self._max_accumulations = max_accumulations
         self._std_epsilon = std_epsilon
-
+    
     def build(self, input_shape):
         """
         Create the variables used by the layer. This method is called automatically
@@ -37,7 +38,7 @@ class Normalizer(Layer):
                                     aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
         self._acc_sum_squared = tf.Variable(tf.zeros(input_shape[-1], tf.float32), name='acc_sum_squared', trainable=False,
                                             aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
-
+    
     def call(self, x, training=False):
         """
         Normalize the features of x independent of other samples, and add
@@ -53,7 +54,7 @@ class Normalizer(Layer):
             self._num_accumulations.assign_add(1.)
 
         return (x - self._mean()) / self._std_with_epsilon()
-
+   
     def inverse(self, normalized_batch_data):
         """
         Inverse transformation of the normalizer
