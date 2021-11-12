@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from common import NodeType
 
-@tf.function
+
 def parse(proto, meta):
     feature_lists = {k: tf.io.VarLenFeature(tf.string) for k in meta['field_names']}
     features = tf.io.parse_single_example(proto, feature_lists)
@@ -28,7 +28,7 @@ def parse(proto, meta):
 
     return out
 
-@tf.function
+
 def add_targets(trajectory, fields, add_history):
     out = {}
     for key, val in trajectory.items():
@@ -39,7 +39,7 @@ def add_targets(trajectory, fields, add_history):
                 out[f'prev|{key}'] = val[0:-2]
     return out
 
-@tf.function
+
 def add_noise(frame, fields, scale, gamma):
     if scale == 0:
         return frame
@@ -56,7 +56,7 @@ def add_noise(frame, fields, scale, gamma):
 
     return frame
 
-@tf.function
+
 def load_dataset_train(path, split, fields, add_history, noise_scale, noise_gamma):
     with open(os.path.join(path, 'meta.json'), 'r') as f:
         meta = json.load(f)
@@ -74,7 +74,7 @@ def load_dataset_train(path, split, fields, add_history, noise_scale, noise_gamm
 
     return dataset
 
-@tf.function
+
 def load_dataset_eval(path, split, fields, add_history):
     with open(os.path.join(path, 'meta.json'), 'r') as f:
         meta = json.load(f)
@@ -87,7 +87,7 @@ def load_dataset_eval(path, split, fields, add_history):
 
     return dataset
 
-@tf.function
+
 def main():
     load_dataset_train(os.path.join('data', 'flag_simple'), 'valid', fields=['world_pos'],
                  add_history=True, noise_scale=0.003, noise_gamma=0.1)

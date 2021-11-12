@@ -39,7 +39,7 @@ try:
 except RuntimeError as e:
     print(e)
 
-@tf.function
+
 def frame_to_graph(frame):
     """Builds input graph."""
 
@@ -64,7 +64,7 @@ def frame_to_graph(frame):
 
     return node_features, edge_features, senders, receivers, frame
 
-@tf.function
+
 def build_model(model, optimizer, dataset, checkpoint=None):
     """Initialize the model"""
     node_features, edge_features, senders, receivers, frame = next(iter(dataset))
@@ -89,7 +89,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         optimizer.set_weights(opt_weights)
         model.load_weights(checkpoint, by_name=True)
 
-@tf.function
+
 def train(num_steps=1000000, checkpoint = None):
     dataset = load_dataset_train(
         path='data/flag_simple',
@@ -154,14 +154,6 @@ def train(num_steps=1000000, checkpoint = None):
         else:
             loss = train_step(graph, frame)
 
-        if s == 1:
-            tf.summary.trace_on(graph = True, profiler = True)
-            loss = train_step(graph, frame)
-            with train_summary_writer.as_default():
-                tf.summary.trace_export(
-                    name="trainstep_trace",
-                    step=s,
-                    profiler_outdir=train_log_dir)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 

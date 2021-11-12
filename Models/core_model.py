@@ -16,7 +16,6 @@ class MLP(Model):
     """
     A simple feed-forward neural network with ReLU activation
     """
-    @tf.function
     def __init__(self, hidden_dims, layer_norm=True):
         """
         Create an MLP
@@ -34,7 +33,7 @@ class MLP(Model):
 
         if layer_norm:
             self.dense_layers.append(LayerNormalization())
-    @tf.function
+    
     def call(self, x, training=False):
         """
         Pass the input x through the MLP
@@ -53,7 +52,7 @@ class GraphNetBlock(Model):
     """
     A message-passing block
     """
-    @tf.function
+  
     def __init__(self, embed_dims, num_layers, num_edge_types=2):
         """
         Create a message-passing block
@@ -71,7 +70,7 @@ class GraphNetBlock(Model):
 
         # separate MLPs for the edge update rules
         self.edge_updates = [MLP([embed_dims] * num_layers) for _ in range(num_edge_types)]
-    @tf.function
+   
     def _update_edge_features(self, node_features, edge_set, index):
         """
         Get the new edge features by aggregating the features of the
@@ -88,7 +87,7 @@ class GraphNetBlock(Model):
         features = [sender_features, receiver_features, edge_set.features]
         return self.edge_updates[index](tf.concat(features, axis=-1))
 
-    @tf.function
+
     def _update_node_features(self, node_features, edge_sets):
         """
         Get the new node features by aggregating the features of all
@@ -107,7 +106,7 @@ class GraphNetBlock(Model):
                                                          edge_set.receivers,
                                                          num_nodes))
         return self.node_update(tf.concat(features, axis=-1))
-    @tf.function
+   
     def call(self, graph, training=False):
         """
         Perform the message-passing on the graph
@@ -137,7 +136,7 @@ class EncodeProcessDecode(Model):
     The composite 3-part architecture consisting of an encoder, a processor,
         and a decoder
     """
-    @tf.function
+ 
     def __init__(self, output_dims, embed_dims, num_layers, num_iterations, num_edge_types=2):
         """
         Create a model
@@ -165,7 +164,7 @@ class EncodeProcessDecode(Model):
 
         # decoder MLPs
         self.node_decoder = MLP([embed_dims] * (num_layers - 1) + [output_dims], layer_norm=False)
-    @tf.function
+   
     def _encoder(self, graph):
         """
         Map the input features onto a latent space for processing
@@ -179,7 +178,7 @@ class EncodeProcessDecode(Model):
             edge_sets.append(edge_set._replace(features=edge_features))
 
         return MultiGraph(node_features, edge_sets)
-    @tf.function
+
     def _decoder(self, graph):
         """
         Readout of the final node features
@@ -188,7 +187,7 @@ class EncodeProcessDecode(Model):
                  is the number of output dims; represents the node update
         """
         return self.node_decoder(graph.node_features)
-   @tf.function
+ 
     def call(self, graph, training=False):
         """
         Pass a graph through the model
