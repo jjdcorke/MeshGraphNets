@@ -11,17 +11,21 @@ class Normalizer(Layer):
     Feature normalizer that accumulates statistics online
     """
     
-    def __init__(self, max_accumulations=1000000, std_epsilon=1e-8):
+    def __init__(self, max_accumulations=1000000, std_epsilon=1e-8, shift=True, scale=True):
         """
         Instantiate a normalization layer
         :param max_accumulations: int; the maximum number of updates to perform on the
                                   running variables
         :param std_epsilon: float; a small number in the std calculation to avoid
                             division by zero
+        :param shift: bool; if False, don't shift the data to zero mean
+        :param scale: bool; if False, don't scale the data to unit variance
         """
         super(Normalizer, self).__init__()
         self._max_accumulations = max_accumulations
         self._std_epsilon = std_epsilon
+        self.shift = shift
+        self.scale = scale
     
     def build(self, input_shape):
         """
@@ -68,14 +72,20 @@ class Normalizer(Layer):
         Get the running mean of inputs through this layer
         :return: Tensor with shape (d,) where d is the number of features
         """
-        safe_count = tf.maximum(self._acc_count, 1.)
-        return self._acc_sum / safe_count
+        if self.shift:
+            safe_count = tf.maximum(self._acc_count, 1.)
+            return self._acc_sum / safe_count
+        else:
+            return 0
 
     def _std_with_epsilon(self):
         """
         Get the running standard deviation of inputs through this layer
         :return: Tensor with shape (d,) where d is the number of features
         """
-        safe_count = tf.maximum(self._acc_count, 1.)
-        std = tf.sqrt(self._acc_sum_squared / safe_count - self._mean() ** 2)
-        return tf.math.maximum(std, self._std_epsilon)
+        if self.scale:
+            safe_count = tf.maximum(self._acc_count, 1.)
+            std = tf.sqrt(self._acc_sum_squared / safe_count - self._mean() ** 2)
+            return tf.math.maximum(std, self._std_epsilon)
+        else:
+            return 1
