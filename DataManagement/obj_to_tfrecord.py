@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
 import tensorflow as tf
-from multiprocessing import Process, SimpleQueue, cpu_count
+from multiprocessing import Process, Queue, cpu_count
 import argparse
+import time
 
 class OBJ:
     def __init__(self, fp):
@@ -55,52 +56,66 @@ def process_trajectory(path):
 def create_record(data_path, template_path, out_file="train.tfrecord", meta_file="meta.json"):
 
     def worker(in_queue, out_queue, pid):
-        while not in_queue.empty(): 
-            path = in_queue.get()
-            world, wind, node = process_trajectory(path)
-            out_queue.put((world, wind, node))
+        while not in_queue.empty():
+            path = in_queue.get(block=True)
+            #print("worker {}: {}".format(pid, path))
+            world_pos, wind_velocity, node_type = process_trajectory(path)
+            shapes = {
+                    "cells" : cells.shape.as_list(),
+                    "mesh_pos" : mesh_pos.shape.as_list(),
+                    "node_type" : node_type.shape.as_list(),
+                    "world_pos" : world_pos.shape.as_list(),
+                    "wind_velocity" : wind_velocity.shape.as_list()
+                    }
+            feature = { 
+                        "cells" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(cells, [-1]))),
+                        "mesh_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(mesh_pos, [-1]))),
+                        "node_type" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(node_type, [-1]))),
+                        "world_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(world_pos, [-1]))),
+                        "wind_velocity" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(wind_velocity, [-1])))
+                        }
+            proto = tf.train.Example(features=tf.train.Features(feature=feature))
+            s = proto.SerializeToString()
+            out_queue.put((s, shapes, path))
 
     def record_writer(in_queue, filename, length):
         processed = 0
+        shapes_prev = {}
+        shapes = {}
         with tf.io.TFRecordWriter(filename) as writer:
-            print("Processing: {} of {}".format(processed, length), end='\r', flush=True)
             while processed < length:
-                world_pos, wind_velocity, node_type = in_queue.get()
-                feature = { 
-                            "cells" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(cells, [-1]))),
-                            "mesh_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(mesh_pos, [-1]))),
-                            "node_type" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(node_type, [-1]))),
-                            "world_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(world_pos, [-1]))),
-                            "wind_velocity" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(wind_velocity, [-1])))
-                            }
-                proto = tf.train.Example(features=tf.train.Features(feature=feature))
-                writer.write(proto.SerializeToString())
+                print("Processing: {} of {} trajectories complete".format(processed, length), end='\r', flush=True)
+                s, shapes, path = in_queue.get(block=True)
+                writer.write(s)
+                assert (not shapes_prev) or (shapes_prev == shapes) , \
+                print("Error, shapes of tensors from (rajectory {} do not mach the previous trajectories".format(path))
+                shapes_prev = shapes
                 processed += 1
-                print("Processing: {} of {}".format(processed, length), end='\r', flush=True)
+
         features = {
         "cells": {
           "type": "static",
-          "shape": cells.shape.as_list(),
+          "shape": shapes["cells"],
           "dtype": "int32"
         },
         "mesh_pos": {
           "type": "static",
-          "shape": mesh_pos.shape.as_list(),
+          "shape": shapes["mesh_pos"],
           "dtype": "float32"
         },
         "node_type": {
           "type": "dynamic",
-          "shape": node_type.shape.as_list(),
+          "shape": shapes["node_type"],
           "dtype": "int32"
         },
         "world_pos": {
           "type": "dynamic",
-          "shape": world_pos.shape.as_list(),
+          "shape": shapes["world_pos"],
           "dtype": "float32"
           },
         "wind_velocity": {
             "type": "dynamic",
-            "shape": wind_velocity.shape.as_list(),
+            "shape": shapes["wind_velocity"],
             "dtype": "float32"
             }
         }
@@ -121,8 +136,8 @@ def create_record(data_path, template_path, out_file="train.tfrecord", meta_file
     cells = tf.constant([mesh.triangles])
     mesh_pos = tf.constant([mesh.verticies])
     data_dirs = list(Path(data_path).iterdir())
-    task_queue = SimpleQueue()
-    result_queue = SimpleQueue()
+    task_queue = Queue()
+    result_queue = Queue()
     workers = [Process(target=worker, args=(task_queue, result_queue, i)) for i in range(cpu_count())]
     for path in data_dirs:
         task_queue.put(path)
