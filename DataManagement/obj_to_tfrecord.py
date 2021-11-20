@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import tensorflow as tf
+from multiprocessing import Process, SimpleQueue, cpu_count
 import argparse
 
 class OBJ:
@@ -26,10 +27,10 @@ class OBJ:
 
 
 def process_trajectory(path):
-    json_file = Path(path).glob("*.json")
-    for file in json_file:
-        with open(file, 'r') as fp:
-            conf = json.load(fp)
+    json_file = list(Path(path).glob("*.json"))
+    assert len(json_file) == 1, "{} json config files are in the directory {}!".format(len(json_file), path)
+    with open(json_file[0], 'r') as fp:
+        conf = json.load(fp)
     obj_files = sorted(Path(path).glob("*.obj"))
     wind_velocity = []
     world_pos = []
@@ -49,7 +50,69 @@ def process_trajectory(path):
     return world_pos, wind_velocity, node_type
 
 
+
+
 def create_record(data_path, template_path, out_file="train.tfrecord", meta_file="meta.json"):
+
+    def worker(in_queue, out_queue, pid):
+        while not in_queue.empty(): 
+            path = in_queue.get()
+            world, wind, node = process_trajectory(path)
+            out_queue.put((world, wind, node))
+
+    def record_writer(in_queue, filename, length):
+        processed = 0
+        with tf.io.TFRecordWriter(filename) as writer:
+            print("Processing: {} of {}".format(processed, length), end='\r', flush=True)
+            while processed < length:
+                world_pos, wind_velocity, node_type = in_queue.get()
+                feature = { 
+                            "cells" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(cells, [-1]))),
+                            "mesh_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(mesh_pos, [-1]))),
+                            "node_type" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(node_type, [-1]))),
+                            "world_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(world_pos, [-1]))),
+                            "wind_velocity" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(wind_velocity, [-1])))
+                            }
+                proto = tf.train.Example(features=tf.train.Features(feature=feature))
+                writer.write(proto.SerializeToString())
+                processed += 1
+                print("Processing: {} of {}".format(processed, length), end='\r', flush=True)
+        features = {
+        "cells": {
+          "type": "static",
+          "shape": cells.shape.as_list(),
+          "dtype": "int32"
+        },
+        "mesh_pos": {
+          "type": "static",
+          "shape": mesh_pos.shape.as_list(),
+          "dtype": "float32"
+        },
+        "node_type": {
+          "type": "dynamic",
+          "shape": node_type.shape.as_list(),
+          "dtype": "int32"
+        },
+        "world_pos": {
+          "type": "dynamic",
+          "shape": world_pos.shape.as_list(),
+          "dtype": "float32"
+          },
+        "wind_velocity": {
+            "type": "dynamic",
+            "shape": wind_velocity.shape.as_list(),
+            "dtype": "float32"
+            }
+        }
+
+        meta = {"simulator" : "arcsim",
+                "dt" : template["frame_time"],
+                "field_names" : ["cells", "mesh_pos", "node_type", "world_pos", "wind_speed"],
+                "features" : features
+                }
+        with open(meta_file, 'w') as fp:
+            json.dump(meta, fp, indent='\t')
+
     with open(template_path, 'r') as fp:
         template = json.load(fp)
     mesh_path = template["cloths"][0]["mesh"]
@@ -57,55 +120,19 @@ def create_record(data_path, template_path, out_file="train.tfrecord", meta_file
         mesh = OBJ(fp)
     cells = tf.constant([mesh.triangles])
     mesh_pos = tf.constant([mesh.verticies])
-    with tf.io.TFRecordWriter(out_file) as writer:
-        for i, traj_dir in enumerate(Path(data_path).iterdir()):
-            world_pos, wind_velocity, node_type = process_trajectory(traj_dir)
-            feature = { 
-                        "cells" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(cells, [-1]))),
-                        "mesh_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(mesh_pos, [-1]))),
-                        "node_type" : tf.train.Feature(int64_list=tf.train.Int64List(value=tf.reshape(node_type, [-1]))),
-                        "world_pos" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(world_pos, [-1]))),
-                        "wind_velocity" : tf.train.Feature(float_list=tf.train.FloatList(value=tf.reshape(wind_velocity, [-1])))
-                        }
-            proto = tf.train.Example(features=tf.train.Features(feature=feature))
-            writer.write(proto.SerializeToString())
-            print(i)
-
-    features = {
-    "cells": {
-      "type": "static",
-      "shape": cells.shape.as_list(),
-      "dtype": "int32"
-    },
-    "mesh_pos": {
-      "type": "static",
-      "shape": mesh_pos.shape.as_list(),
-      "dtype": "float32"
-    },
-    "node_type": {
-      "type": "dynamic",
-      "shape": node_type.shape.as_list(),
-      "dtype": "int32"
-    },
-    "world_pos": {
-      "type": "dynamic",
-      "shape": world_pos.shape.as_list(),
-      "dtype": "float32"
-      },
-    "wind_velocity": {
-        "type": "dynamic",
-        "shape": wind_velocity.shape.as_list(),
-        "dtype": "float32"
-        }
-    }
-
-    meta = {"simulator" : "arcsim",
-            "dt" : template["frame_time"],
-            "field_names" : ["cells", "mesh_pos", "node_type", "world_pos", "wind_speed"],
-            "features" : features
-            }
-    with open(meta_file, 'w') as fp:
-        json.dump(meta, fp, indent='\t')
+    data_dirs = list(Path(data_path).iterdir())
+    task_queue = SimpleQueue()
+    result_queue = SimpleQueue()
+    workers = [Process(target=worker, args=(task_queue, result_queue, i)) for i in range(cpu_count())]
+    for path in data_dirs:
+        task_queue.put(path)
+    for p in workers:
+        p.start()
+    writer = Process(target=record_writer, args=(result_queue, out_file, len(data_dirs)))
+    writer.start()
+    for p in workers:
+        p.join()
+    writer.join()
 
 def main():
     parser = argparse.ArgumentParser(description="Convert obj files produced by arcsim to a tfrecord for training.")
