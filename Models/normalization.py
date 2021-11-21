@@ -43,7 +43,7 @@ class Normalizer(Layer):
         self._acc_sum_squared = tf.Variable(tf.zeros(input_shape[-1], tf.float32), name='acc_sum_squared', trainable=False,
                                             aggregation=tf.VariableAggregation.SUM, synchronization=tf.VariableSynchronization.ON_READ)
     
-    def call(self, x, training=False):
+    def call(self, x, training=False, mask=None):
         """
         Normalize the features of x independent of other samples, and add
             the new statistics to the running statistics
@@ -52,10 +52,16 @@ class Normalizer(Layer):
         :return: a new Tensor with the same shape as x
         """
         if training and self._num_accumulations < self._max_accumulations:
-            self._acc_count.assign_add(tf.cast(tf.shape(x)[0], tf.float32))
-            self._acc_sum.assign_add(tf.reduce_sum(x, axis=0))
-            self._acc_sum_squared.assign_add(tf.reduce_sum(x ** 2, axis=0))
-            self._num_accumulations.assign_add(1.)
+            if mask is None:
+                self._acc_count.assign_add(tf.cast(tf.shape(x)[0], tf.float32))
+                self._acc_sum.assign_add(tf.reduce_sum(x, axis=0))
+                self._acc_sum_squared.assign_add(tf.reduce_sum(x ** 2, axis=0))
+                self._num_accumulations.assign_add(1.)
+            else:
+                self._acc_count.assign_add(tf.cast(tf.count_nonzero(mask), tf.float32))
+                self._acc_sum.assign_add(tf.reduce_sum(x * mask, axis=0))
+                self._acc_sum_squared.assign_add(tf.reduce_sum((x * mask) ** 2, axis=0))
+                self._num_accumulations.assign_add(1.)
 
         return (x - self._mean()) / self._std_with_epsilon()
    

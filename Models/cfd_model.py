@@ -36,7 +36,6 @@ class CFDModel(Model):
         self._node_normalizer = normalization.Normalizer()
         self._edge_normalizer = normalization.Normalizer()
 
-
     def call(self, graph, training = False):
         '''
         Pass a graph through the model
@@ -64,13 +63,13 @@ class CFDModel(Model):
             :return: Tensor with shape (,) representing the loss value
         
         """
-        network_output = self(graph, training = True)
+        network_output = self(graph, training=True)
 
         # build target velocity change
         cur_velocity = frame['velocity']
         target_velocity = frame['target|velocity']
         target_velocity_change = target_velocity - cur_velocity
-        target_normalized = self._output_normalizer(target_velocity_change)
+        target_normalized = self._output_normalizer(target_velocity_change, training=True)
 
         # build loss
         loss_mask = tf.cast(tf.logical_or(tf.equal(frame['node_type'][:,0], common.NodeType.NORMAL),
@@ -79,7 +78,7 @@ class CFDModel(Model):
         loss = tf.reduce_mean(error*loss_mask)
         return loss
 
-    @tf.function(jit_compile = True)
+    @tf.function(experimental_compile = True)
     def _update(self, graph, frame):
         """Integrate model outputs."""
         

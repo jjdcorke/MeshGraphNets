@@ -45,7 +45,7 @@ def add_noise(frame, fields, scale, gamma):
         return frame
 
     for field in fields:
-        noise = tf.random.normal(frame[field].shape, stddev=scale, dtype=tf.float32)
+        noise = tf.random.normal(tf.shape(frame[field]), stddev=scale, dtype=tf.float32)
 
         # don't apply noise to boundary nodes
         mask = tf.equal(frame['node_type'], NodeType.NORMAL)

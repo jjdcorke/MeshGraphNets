@@ -45,7 +45,7 @@ def frame_to_graph(frame):
 
     # construct graph nodes
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-    node_features = tf.concat([inputs['velocity'], node_type], axis=-1)
+    node_features = tf.concat([frame['velocity'], node_type], axis=-1)
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
@@ -85,7 +85,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def train(num_steps=1000000, checkpoint = None):
+def train(num_steps=10000000, checkpoint = None):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_flow'),
         split='train',
@@ -96,16 +96,16 @@ def train(num_steps=1000000, checkpoint = None):
     )
     dataset = dataset.map(frame_to_graph, num_parallel_calls=8)
     dataset = dataset.prefetch(16)
-    
+
 
     model = core_model.EncodeProcessDecode(
-        output_dims=3,
+        output_dims=2,
         embed_dims=128,
         num_layers=3,
         num_iterations=15,
         num_edge_types=1
     )
-    model = cloth_model.ClothModel(model)
+    model = cfd_model.CFDModel(model)
     lr = tf.keras.optimizers.schedules.ExponentialDecay(1e-4, decay_steps=num_steps // 2, decay_rate=0.1)
     optimizer = Adam(learning_rate=lr)
 
@@ -117,12 +117,14 @@ def train(num_steps=1000000, checkpoint = None):
     build_model(model, optimizer, dataset, checkpoint = checkpoint)
     # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
-    @tf.function(jit_compile=True)
+    #@tf.function(jit_compile=True)
+    @tf.function(experimental_relax_shapes=True)
     def warmup(graph, frame):
         loss = model.loss(graph, frame)
         return loss
 
-    @tf.function(jit_compile=True)
+    #@tf.function(jit_compile=True)
+    @tf.function(experimental_relax_shapes=True)
     def train_step(graph, frame):
         with tf.GradientTape() as tape:
             loss = model.loss(graph, frame)
@@ -139,16 +141,10 @@ def train(num_steps=1000000, checkpoint = None):
         node_features, edge_features, senders, receivers, frame = next(dataset_iter)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        if s == 1100:
-            tf.profiler.experimental.start('logdir')
-        elif s == 1105:
-            tf.profiler.experimental.stop()
-
         if s < 1000:
             loss = warmup(graph, frame)
         else:
             loss = train_step(graph, frame)
-
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
@@ -160,8 +156,8 @@ def train(num_steps=1000000, checkpoint = None):
 
         if s != 0 and s % 50000 == 0:
             filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', filename))
-            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints', f'{filename}_optimizer.npy'), optimizer.get_weights())
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_cfd_long', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_cfd_long', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
 
 
