@@ -46,7 +46,7 @@ def frame_to_graph(frame):
     # construct graph nodes
     velocity = frame['world_pos'] - frame['prev|world_pos']
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-    wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
+    wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']/100
     # wind_velocities = frame['wind_velocity']
     node_features = tf.concat([velocity, node_type, wind_velocities], axis=-1)
 
