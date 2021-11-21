@@ -90,13 +90,13 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def train(num_steps=1000000, checkpoint = None):
+def train(num_steps=10000000, checkpoint = None):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
         fields=['world_pos'],
         add_history=True,
-        noise_scale=0.001,
+        noise_scale=0.003,
         noise_gamma=0.1
     )
     dataset = dataset.map(frame_to_graph, num_parallel_calls=8)
@@ -122,12 +122,12 @@ def train(num_steps=1000000, checkpoint = None):
     build_model(model, optimizer, dataset, checkpoint = checkpoint)
     # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
-    @tf.function(jit_compile=True)
+    @tf.function(experimental_compile=True)
     def warmup(graph, frame):
         loss = model.loss(graph, frame)
         return loss
 
-    @tf.function(jit_compile=True)
+    @tf.function(experimental_compile=True)
     def train_step(graph, frame):
         with tf.GradientTape() as tape:
             loss = model.loss(graph, frame)
@@ -144,16 +144,10 @@ def train(num_steps=1000000, checkpoint = None):
         node_features, edge_features, senders, receivers, frame = next(dataset_iter)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        if s == 1100:
-            tf.profiler.experimental.start('logdir')
-        elif s == 1105:
-            tf.profiler.experimental.stop()
-
         if s < 1000:
             loss = warmup(graph, frame)
         else:
             loss = train_step(graph, frame)
-
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
@@ -163,17 +157,10 @@ def train(num_steps=1000000, checkpoint = None):
 
         train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
 
-
-
-        
-
-
-
-
         if s != 0 and s % 50000 == 0:
             filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints', filename))
-            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints', f'{filename}_optimizer.npy'), optimizer.get_weights())
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
 
 

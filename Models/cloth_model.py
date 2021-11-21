@@ -78,7 +78,7 @@ class ClothModel(Model):
         return loss
 
 
-    @tf.function(jit_compile=True)
+    @tf.function(experimental_compile=True)
     def predict(self, graph, frame):
         """
         Predict the new position of the mesh after a single time-step
