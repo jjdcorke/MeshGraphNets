@@ -39,6 +39,10 @@ try:
 except RuntimeError as e:
     print(e)
 
+def add_noise(field, scale):
+    noise = tf.random.normal(tf.shape(field), stddev=scale, dtype=tf.float32)
+    field += noise
+    return field
 
 def frame_to_graph(frame):
     """Builds input graph."""
@@ -46,8 +50,10 @@ def frame_to_graph(frame):
     # construct graph nodes
     velocity = frame['world_pos'] - frame['prev|world_pos']
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-    wind_velocities = frame['wind_velocity']
+    wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
+    wind_velocities = add_noise(wind_velocities, scale=0.01)
     node_features = tf.concat([velocity, node_type, wind_velocities], axis=-1)
+
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
@@ -95,7 +101,7 @@ def train(num_steps=10000000, checkpoint = None):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
-        fields=['world_pos', 'wind_velocity'],
+        fields=['world_pos'],
         add_history=True,
         noise_scale=0.003,
         noise_gamma=0.1
