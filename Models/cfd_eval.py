@@ -24,7 +24,7 @@ import tensorflow as tf
 
 import common
 import core_model
-import cfg_model
+import cfd_model
 from dataset import load_dataset_eval
 
 
@@ -80,14 +80,32 @@ def build_model(model, dataset):
     
 
 def rollout(model, initial_frame, num_steps):
-     """Rolls out a model trajectory."""
-     node_type = initial_frame['node_type'][:, 0]
-     mask = tf.logical_or(tf.equal(node_type, NodeType.NORMAL),
-                       tf.equal(node_type, NodeType.OUTFLOW))
+    """Rolls out a model trajectory."""
+
+
+    node_type = initial_frame['node_type'][:, 0]
+    mask = tf.logical_or(tf.equal(node_type, common.NodeType.NORMAL),
+                       tf.equal(node_type, common.NodeType.OUTFLOW))
      
      # someone continue where I Left off
 
-  
+    prev_pos = initial_frame['prev|world_pos']
+    curr_pos = initial_frame['world_pos']
+    trajectory = []
+
+    rollout_loop = tqdm(range(num_steps))
+    for _ in rollout_loop:
+        frame = {**initial_frame, 'prev|world_pos': prev_pos, 'world_pos': curr_pos}
+        node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
+        graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
+
+        next_pos = model.predict(graph, frame)
+        next_pos = tf.where(mask, next_pos, curr_pos)
+        trajectory.append(curr_pos)
+
+        prev_pos, curr_pos = curr_pos, next_pos
+
+    return tf.stack(trajectory)
 
 
   
@@ -106,21 +124,53 @@ def to_numpy(t):
 #Deepmind part to change
 
 def evaluate(model, inputs):
-  """Performs model rollouts and create stats."""
-  initial_state = {k: v[0] for k, v in inputs.items()}
-  num_steps = inputs['cells'].shape[0]
-  prediction = _rollout(model, initial_state, num_steps)
+    
+    """Performs model rollouts and create stats."""
 
-  error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
-  scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
+    
+    initial_state = {k: v[0] for k, v in inputs.items()}
+    num_steps = inputs['cells'].shape[0]
+    prediction = rollout(model, initial_state, num_steps)
+
+    error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
+    scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
              for horizon in [1, 10, 20, 50, 100, 200]}
-  traj_ops = {
+    traj_ops = {
       'faces': inputs['cells'],
       'mesh_pos': inputs['mesh_pos'],
       'gt_velocity': inputs['velocity'],
       'pred_velocity': prediction
   }
-  return scalars, traj_ops
+    return scalars, traj_ops
 
+def main():
+    dataset = load_dataset_eval(
+        path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_flow'),
+        split='test',
+        fields=['world_pos'],
+        add_history=True
+    )
+
+    model = core_model.EncodeProcessDecode(
+        output_dims=6,
+        embed_dims=128,
+        num_layers=2,
+        num_iterations=15,
+        num_edge_types=1
+    )
+    model = cfd_model.CFDModel(model)
+
+    # build the model
+    build_model(model, dataset)
+    
+    #########CHECKPOINT FILE TO BE SPECIFIED##########
+
+    #checpoint_file = 
+
+    #########
+
+    model.load_weights(checkpoint_file, by_name=True)
+    
+    evaluate(model, )
 
 

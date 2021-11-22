@@ -81,7 +81,7 @@ class CFDModel(Model):
 
 
   @tf.function(jit_compile = True)
-  def _update(self, graph, frame):
+  def predict(self, graph, frame):
     """Integrate model outputs."""
     
     output = self(graph, training = False)
