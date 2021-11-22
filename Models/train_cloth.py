@@ -46,8 +46,7 @@ def frame_to_graph(frame):
     # construct graph nodes
     velocity = frame['world_pos'] - frame['prev|world_pos']
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-    wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']/100
-    # wind_velocities = frame['wind_velocity']
+    wind_velocities = frame['wind_velocity']
     node_features = tf.concat([velocity, node_type, wind_velocities], axis=-1)
 
     # construct graph edges
@@ -96,7 +95,7 @@ def train(num_steps=1000000, checkpoint = None):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
-        fields=['world_pos'],
+        fields=['world_pos', 'wind_velocity'],
         add_history=True,
         noise_scale=0.001,
         noise_gamma=0.1
