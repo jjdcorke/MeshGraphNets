@@ -60,7 +60,7 @@ class CFDModel(Model):
     The loss function to use when training the model; the L2 distance
             between the ground-truth velocity and the model prediction
         :param graph: MultiGraph; the graph representing the raw mesh
-        :param frame: dict; contains the ground-truth positions
+        :param frame: dict; contains the ground-truth velocities
         :return: Tensor with shape (,) representing the loss value
     
     """
