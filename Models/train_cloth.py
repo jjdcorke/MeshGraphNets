@@ -200,7 +200,8 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
             # perform validation
             errors = validation(model, valid_dataset)
             with val_summary_writer.as_default():
-                tf.summary.scalar('validation losses',errors,step = s) #s for training session
+                for k, v in errors.items():
+                    tf.summary.scalar(f'validation {k}-rmse', v, step=s)
             print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
 
 
