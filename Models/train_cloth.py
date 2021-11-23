@@ -147,7 +147,11 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_log_dir = 'Visualization/logs/train/' + current_time
-    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    trainlossdir = train_log_dir+'/loss'
+    vallossdir = train_log_dir+'/validation'
+
+    loss_summary_writer = tf.summary.create_file_writer(trainlossdir)
+    val_summary_writer = tf.summary.create_file_writer(vallossdir)
 
     # build the model
     build_model(model, optimizer, dataset, checkpoint = checkpoint)
@@ -183,7 +187,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
         if s%500 == 0:
-            with train_summary_writer.as_default():
+            with loss_summary_writer.as_default():
                 tf.summary.scalar('loss',loss,step = s) #s for training session
 
         train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
@@ -195,6 +199,8 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
             # perform validation
             errors = validation(model, valid_dataset)
+            with val_summary_writer.as_default():
+                tf.summary.scalar('validation losses',errors,step = s) #s for training session
             print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
 
 
