@@ -27,7 +27,8 @@ from tensorflow.keras.optimizers import Adam
 import common
 import core_model
 import cloth_model
-from dataset import load_dataset_train
+from dataset import load_dataset_train, load_dataset_eval
+from evaluate import rollout
 
 import datetime
 
@@ -99,7 +100,22 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def train(num_steps=10000000, checkpoint = None, wind=False):
+def validation(model, dataset, num_trajectories=5):
+    print('\nEvaluating...')
+    horizons = [1, 10, 20, 50, 100, 200, 398]
+    all_errors = {horizon: [] for horizon in horizons}
+    for i, trajectory in enumerate(dataset.take(num_trajectories)):
+        initial_frame = {k: v[0] for k, v in trajectory.items()}
+        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0])
+
+        error = tf.reduce_mean(tf.square(predicted_trajectory - trajectory['world_pos']), axis=-1)
+        for horizon in horizons:
+            all_errors[horizon].append(tf.math.sqrt(tf.reduce_mean(error[1:horizon + 1])).numpy())
+
+    return {k: np.mean(v) for k, v in all_errors.items()}
+
+
+def train(num_steps=10000000, checkpoint=None, wind=False):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
@@ -111,6 +127,12 @@ def train(num_steps=10000000, checkpoint = None, wind=False):
     dataset = dataset.map(lambda frame: frame_to_graph(frame, wind=wind), num_parallel_calls=8)
     dataset = dataset.prefetch(16)
 
+    valid_dataset = load_dataset_eval(
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        split='valid',
+        fields=['world_pos'],
+        add_history=True
+    )
 
     model = core_model.EncodeProcessDecode(
         output_dims=3,
@@ -171,6 +193,9 @@ def train(num_steps=10000000, checkpoint = None, wind=False):
             model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
             np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
+            # perform validation
+            errors = validation(model, valid_dataset)
+            print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
 
 
 def main():
