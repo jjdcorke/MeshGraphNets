@@ -24,7 +24,9 @@ import tensorflow as tf
 
 import common
 import core_model
+
 import cfd_model
+
 from dataset import load_dataset_eval
 
 
@@ -80,6 +82,7 @@ def build_model(model, dataset):
     
 
 def rollout(model, initial_frame, num_steps):
+
     """Rolls out a model trajectory."""
 
 
@@ -108,6 +111,7 @@ def rollout(model, initial_frame, num_steps):
     return tf.stack(trajectory)
 
 
+
   
 def to_numpy(t):
     """
@@ -124,6 +128,7 @@ def to_numpy(t):
 #Deepmind part to change
 
 def evaluate(model, inputs):
+
     
     """Performs model rollouts and create stats."""
 
@@ -136,11 +141,13 @@ def evaluate(model, inputs):
     scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
              for horizon in [1, 10, 20, 50, 100, 200]}
     traj_ops = {
+
       'faces': inputs['cells'],
       'mesh_pos': inputs['mesh_pos'],
       'gt_velocity': inputs['velocity'],
       'pred_velocity': prediction
   }
+
     return scalars, traj_ops
 
 def main():
@@ -172,5 +179,6 @@ def main():
     model.load_weights(checkpoint_file, by_name=True)
     
     evaluate(model, )
+
 
 

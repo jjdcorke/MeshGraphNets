@@ -116,6 +116,27 @@ def to_numpy(t):
         return t
 
 
+def avg_rmse():
+    results_path = os.path.join(model_dir, 'results')
+    results_prefixes = ['og_long-step9450000-loss0.03564.hdf5']
+
+    for prefix in results_prefixes:
+        all_errors = []
+        for i in range(100):
+            try:
+                with open(os.path.join(results_path, prefix, f'{i:03d}.eval'), 'rb') as f:
+                    data = pickle.load(f)
+                    all_errors.append(data['errors'])
+            except FileNotFoundError:
+                continue
+
+        keys = list(all_errors[0].keys())
+        all_errors = {k: np.array([errors[k] for errors in all_errors]) for k in keys}
+
+        for k, v in all_errors.items():
+            print(prefix, k, np.mean(v))
+
+
 def evaluate(checkpoint_file, num_trajectories):
     dataset = load_dataset_eval(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
@@ -158,7 +179,8 @@ def evaluate(checkpoint_file, num_trajectories):
 
 
 def main():
-    evaluate(os.path.join(model_dir, 'checkpoints/weights-step2900000-loss128.67308.hdf5'), 100)
+    # evaluate(os.path.join(model_dir, 'checkpoints/lrga_long-step10150000-loss0.03587.hdf5'), 100)
+    avg_rmse()
 
 
 if __name__ == '__main__':
