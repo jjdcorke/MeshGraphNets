@@ -44,16 +44,18 @@ def add_noise(field, scale):
     field += noise
     return field
 
-def frame_to_graph(frame):
+def frame_to_graph(frame, wind=False):
     """Builds input graph."""
 
     # construct graph nodes
     velocity = frame['world_pos'] - frame['prev|world_pos']
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-    wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
-    wind_velocities = add_noise(wind_velocities, scale=0.01)
-    node_features = tf.concat([velocity, node_type, wind_velocities], axis=-1)
 
+    node_features = tf.concat([velocity, node_type], axis=-1)
+    if wind:
+        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
+        wind_velocities = add_noise(wind_velocities, scale=0.01)
+        node_features = tf.concat([node_features, wind_velocities], axis=-1)
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
@@ -97,7 +99,7 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def train(num_steps=10000000, checkpoint = None):
+def train(num_steps=10000000, checkpoint = None, wind=False):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
@@ -106,9 +108,9 @@ def train(num_steps=10000000, checkpoint = None):
         noise_scale=0.003,
         noise_gamma=0.1
     )
-    dataset = dataset.map(frame_to_graph, num_parallel_calls=8)
+    dataset = dataset.map(lambda frame: frame_to_graph(frame, wind=wind), num_parallel_calls=8)
     dataset = dataset.prefetch(16)
-    
+
 
     model = core_model.EncodeProcessDecode(
         output_dims=3,
@@ -172,7 +174,7 @@ def train(num_steps=10000000, checkpoint = None):
 
 
 def main():
-    
+
     train()
 
 
