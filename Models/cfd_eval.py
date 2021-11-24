@@ -15,6 +15,8 @@
 # limitations under the License.
 # ============================================================================
 import os
+from pathlib import Path
+import argparse
 import pickle
 from pathlib import Path
 
@@ -141,7 +143,6 @@ def evaluate(model, inputs):
     scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
              for horizon in [1, 10, 20, 50, 100, 200]}
     traj_ops = {
-
       'faces': inputs['cells'],
       'mesh_pos': inputs['mesh_pos'],
       'gt_velocity': inputs['velocity'],
@@ -150,14 +151,13 @@ def evaluate(model, inputs):
 
     return scalars, traj_ops
 
-def main():
+def run(checkpoint, data_path, num_trajectories):
     dataset = load_dataset_eval(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_flow'),
+        path=data_path,
         split='test',
         fields=['world_pos'],
         add_history=True
     )
-
     model = core_model.EncodeProcessDecode(
         output_dims=6,
         embed_dims=128,
@@ -166,19 +166,25 @@ def main():
         num_edge_types=1
     )
     model = cfd_model.CFDModel(model)
-
-    # build the model
     build_model(model, dataset)
-    
-    #########CHECKPOINT FILE TO BE SPECIFIED##########
-
-    #checpoint_file = 
-
-    #########
-
-    model.load_weights(checkpoint_file, by_name=True)
-    
-    evaluate(model, )
+    model.load_weights(checkpoint, by_name=True)
+    for i, trajectory in enumerate(dataset.take(num_trajectories)):
+        rmse_error, predicted_trajectory = evaluate(model, dataset)
+        data = {**trajectory, 'true_world_pos': trajectory['world_pos'], 'pred_world_pos': predicted_trajectory, 'errors': rmse_error}
+        data = {k: to_numpy(v) for k, v in data.items()}
+        save_path = os.path.join(model_dir, 'results', os.path.split(checkpoint)[-1], f'{i:03d}.eval')
+        with open(save_path, "wb") as fp:
+            pickle.dump(data, fp)
 
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("checkpoint", help="Path to checkpoint file")
+    parser.add_argument("data_path", help="Path to dataset")
+    parser.add_argument("num_trajectories", type=int, help="Number of trajectories to evaluate")
+    args = parser.parse_args()
+    run(args.checkpoint, args.data_path, args.num_trajectories)
 
+
+if __name__ == "__main__":
+    main()
