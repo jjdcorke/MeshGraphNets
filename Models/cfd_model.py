@@ -26,6 +26,7 @@ import normalization
 
 
 class CFDModel(Model):
+
     """Model for fluid simulation."""
 
     def __init__(self, model):
@@ -39,10 +40,12 @@ class CFDModel(Model):
     def call(self, graph, training = False):
         '''
         Pass a graph through the model
+
         :param graph: MultiGraph; the graph representing the raw mesh
         :param training: bool; if False, use inference mode
         :return: Tensor with shape (n, d), where n is the number of nodes and
                  d is the number of output dims; represents the node updates
+
         '''
         #normalize nodes and edge features
         new_node_features = self._node_normalizer(graph.node_features,training = training)
@@ -88,3 +91,4 @@ class CFDModel(Model):
         # integrate forward
         cur_velocity = frame['velocity']
         return cur_velocity + velocity_update
+
