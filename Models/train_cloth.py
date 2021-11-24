@@ -219,7 +219,7 @@ def main():
         tf.summary.trace_export(
             name="training graph",
             step=0,
-            profiler_outdir=)
+            profiler_outdir=train_log_dir)
     
 
 
