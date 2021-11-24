@@ -126,7 +126,7 @@ def validation(model, dataset, num_trajectories=5):
 
 
 @tf.function
-def train(num_steps=2, checkpoint=None, wind=False):
+def train(num_steps=10000000, checkpoint=None, wind=False):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
@@ -186,30 +186,30 @@ def train(num_steps=2, checkpoint=None, wind=False):
         node_features, edge_features, senders, receivers, frame = next(dataset_iter)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        if s < 1:
+        if s < 1000:
             loss = warmup(graph, frame)
         else:
             loss = train_step(graph, frame)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
-        #if s%500 == 0:
-        with train_summary_writer.as_default():
-            tf.summary.scalar('loss',loss,step = s) #s for training session
+        if s%500 == 0:
+            with train_summary_writer.as_default():
+                tf.summary.scalar('loss',loss,step = s) #s for training session
 
-        #train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
+        train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
 
-        #if s != 0 and s % 50000 == 0:
-         #   filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-          #  model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
-           # np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
+        if s != 0 and s % 50000 == 0:
+            filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
             # perform validation
-           # errors = validation(model, valid_dataset)
-           # with train_summary_writer.as_default():
-            #    for k, v in errors.items():
-            #        tf.summary.scalar(f'validation {k}-rmse', v, step=s)
-           # print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
+            errors = validation(model, valid_dataset)
+            with train_summary_writer.as_default():
+                for k, v in errors.items():
+                    tf.summary.scalar(f'validation {k}-rmse', v, step=s)
+            print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
 
 
 def main():
