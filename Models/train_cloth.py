@@ -39,7 +39,16 @@ try:
         tf.config.experimental.set_memory_growth(gpu, True)
 except RuntimeError as e:
     print(e)
+    
+#creates summary writer path for logging metrics
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+train_log_dir = 'Visualization/logs/train/' + current_time
+###trainlossdir = train_log_dir+'/loss'
+###vallossdir = train_log_dir+'/validation'
 
+#write summary writers
+train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+####val_summary_writer = tf.summary.create_file_writer(vallossdir)
 def add_noise(field, scale):
     noise = tf.random.normal(tf.shape(field), stddev=scale, dtype=tf.float32)
     field += noise
@@ -115,7 +124,9 @@ def validation(model, dataset, num_trajectories=5):
     return {k: np.mean(v) for k, v in all_errors.items()}
 
 
-def train(num_steps=10000000, checkpoint=None, wind=False):
+
+@tf.function
+def train(num_steps=2, checkpoint=None, wind=False):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
@@ -145,24 +156,20 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     lr = tf.keras.optimizers.schedules.ExponentialDecay(1e-4, decay_steps=num_steps // 2, decay_rate=0.1)
     optimizer = Adam(learning_rate=lr)
 
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = 'Visualization/logs/train/' + current_time
-    trainlossdir = train_log_dir+'/loss'
-    vallossdir = train_log_dir+'/validation'
+    
 
-    loss_summary_writer = tf.summary.create_file_writer(trainlossdir)
-    val_summary_writer = tf.summary.create_file_writer(vallossdir)
+    
 
     # build the model
     build_model(model, optimizer, dataset, checkpoint = checkpoint)
     # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
-    @tf.function(experimental_compile=True)
+    #@tf.function(experimental_compile=True)
     def warmup(graph, frame):
         loss = model.loss(graph, frame)
         return loss
 
-    @tf.function(experimental_compile=True)
+    #@tf.function(experimental_compile=True)
     def train_step(graph, frame):
         with tf.GradientTape() as tape:
             loss = model.loss(graph, frame)
@@ -179,35 +186,41 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
         node_features, edge_features, senders, receivers, frame = next(dataset_iter)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        if s < 1000:
+        if s < 1:
             loss = warmup(graph, frame)
         else:
             loss = train_step(graph, frame)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
-        if s%500 == 0:
-            with loss_summary_writer.as_default():
-                tf.summary.scalar('loss',loss,step = s) #s for training session
+        #if s%500 == 0:
+        with train_summary_writer.as_default():
+            tf.summary.scalar('loss',loss,step = s) #s for training session
 
-        train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
+        #train_loop.set_description(f'Step {s}/{num_steps}, Loss {moving_loss:.5f}')
 
-        if s != 0 and s % 50000 == 0:
-            filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
-            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
+        #if s != 0 and s % 50000 == 0:
+         #   filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
+          #  model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
+           # np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
             # perform validation
-            errors = validation(model, valid_dataset)
-            with val_summary_writer.as_default():
-                for k, v in errors.items():
-                    tf.summary.scalar(f'validation {k}-rmse', v, step=s)
-            print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
+           # errors = validation(model, valid_dataset)
+           # with train_summary_writer.as_default():
+            #    for k, v in errors.items():
+            #        tf.summary.scalar(f'validation {k}-rmse', v, step=s)
+           # print(', '.join([f'{k}-step RMSE: {v}' for k, v in errors.items()]))
 
 
 def main():
-
+    tf.summary.trace_on(graph=True, profiler=True)
     train()
+    with train_summary_writer.as_default():
+        tf.summary.trace_export(
+            name="training graph",
+            step=0,
+            profiler_outdir=)
+    
 
 
 if __name__ == '__main__':
