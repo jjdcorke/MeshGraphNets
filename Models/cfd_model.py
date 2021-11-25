@@ -31,7 +31,7 @@ class CFDModel(Model):
 
     def __init__(self, model):
         super(CFDModel, self).__init__()
-   
+
         self.model = model
         self._output_normalizer = normalization.Normalizer()
         self._node_normalizer = normalization.Normalizer()
@@ -51,10 +51,10 @@ class CFDModel(Model):
         new_node_features = self._node_normalizer(graph.node_features,training = training)
         new_edge_sets = [graph.edge_sets[0]._replace(features = self._edge_normalizer(graph.edge_sets[0].features, training = training))]
         graph = core_model.MultiGraph(new_node_features, new_edge_sets)
-        
+
         #pass through encoder-processor-decoder architecture
         output = self.model(graph, training = training)
-        
+
         return output
 
     def loss(self, graph, frame):
@@ -64,7 +64,7 @@ class CFDModel(Model):
             :param graph: MultiGraph; the graph representing the raw mesh
             :param frame: dict; contains the ground-truth velocities
             :return: Tensor with shape (,) representing the loss value
-        
+
         """
         network_output = self(graph, training=True)
 
@@ -81,14 +81,13 @@ class CFDModel(Model):
         loss = tf.reduce_mean(error*loss_mask)
         return loss
 
-    @tf.function(experimental_compile = True)
-    def _update(self, graph, frame):
+    @tf.function(experimental_relax_shapes=True)
+    def predict(self, graph, frame):
         """Integrate model outputs."""
-        
+
         output = self(graph, training = False)
-        
+
         velocity_update = self._output_normalizer.inverse(output)
         # integrate forward
         cur_velocity = frame['velocity']
         return cur_velocity + velocity_update
-

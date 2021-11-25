@@ -49,7 +49,7 @@ model_dir = os.path.dirname(__file__)
 def frame_to_graph(frame):
     """Builds input graph."""
     # construct graph nodes
-    
+
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
     node_features = tf.concat([frame['velocity'], node_type], axis=-1)
 
@@ -61,13 +61,13 @@ def frame_to_graph(frame):
         relative_mesh_pos,
         tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
 
-    
+
     del frame['cells']
-    
+
     return node_features, edge_features, senders, receivers, frame
 
 def build_model(model, dataset):
-    
+
     traj = next(iter(dataset))
     frame = {k: v[0] for k, v in traj.items()}
     node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
@@ -81,40 +81,34 @@ def build_model(model, dataset):
     for var in model.trainable_weights:
         total += np.prod(var.shape)
     print(f'Total trainable parameters: {total}')
-    
+
 
 def rollout(model, initial_frame, num_steps):
 
     """Rolls out a model trajectory."""
 
-
-    node_type = initial_frame['node_type'][:, 0]
+    node_type = initial_frame['node_type']
     mask = tf.logical_or(tf.equal(node_type, common.NodeType.NORMAL),
-                       tf.equal(node_type, common.NodeType.OUTFLOW))
-     
-     # someone continue where I Left off
+                         tf.equal(node_type, common.NodeType.OUTFLOW))
 
-    prev_pos = initial_frame['prev|world_pos']
-    curr_pos = initial_frame['world_pos']
+    curr_velocity = initial_frame['velocity']
     trajectory = []
 
     rollout_loop = tqdm(range(num_steps))
     for _ in rollout_loop:
-        frame = {**initial_frame, 'prev|world_pos': prev_pos, 'world_pos': curr_pos}
+        frame = {**initial_frame, 'velocity': curr_velocity}
         node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        next_pos = model.predict(graph, frame)
-        next_pos = tf.where(mask, next_pos, curr_pos)
-        trajectory.append(curr_pos)
+        next_velocity = model.predict(graph, frame)
+        next_velocity = tf.where(mask, next_velocity, curr_velocity)
+        trajectory.append(curr_velocity)
 
-        prev_pos, curr_pos = curr_pos, next_pos
+        curr_velocity = next_velocity
 
     return tf.stack(trajectory)
 
 
-
-  
 def to_numpy(t):
     """
     If t is a Tensor, convert it to a NumPy array; otherwise do nothing
@@ -122,59 +116,72 @@ def to_numpy(t):
     try:
         return t.numpy()
     except:
-        return t   
-    
+        return t
 
 
+def avg_rmse():
+    results_path = os.path.join(model_dir, 'results', 'cfd')
+    results_prefixes = ['og_long-step4200000-loss0.01691.hdf5']
 
-#Deepmind part to change
+    for prefix in results_prefixes:
+        all_errors = []
+        for i in range(10):
+            try:
+                with open(os.path.join(results_path, prefix, f'{i:03d}.eval'), 'rb') as f:
+                    data = pickle.load(f)
+                    all_errors.append(data['errors'])
+            except FileNotFoundError:
+                continue
+
+        keys = list(all_errors[0].keys())
+        all_errors = {k: np.array([errors[k] for errors in all_errors]) for k in keys}
+
+        for k, v in all_errors.items():
+            print(prefix, k, np.mean(v))
+
 
 def evaluate(model, inputs):
-
-    
     """Performs model rollouts and create stats."""
 
-    
     initial_state = {k: v[0] for k, v in inputs.items()}
     num_steps = inputs['cells'].shape[0]
     prediction = rollout(model, initial_state, num_steps)
 
     error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
-    scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
-             for horizon in [1, 10, 20, 50, 100, 200]}
-    traj_ops = {
-      'faces': inputs['cells'],
-      'mesh_pos': inputs['mesh_pos'],
-      'gt_velocity': inputs['velocity'],
-      'pred_velocity': prediction
-  }
+    scalars = {f'{horizon}_step_error': tf.math.sqrt(tf.reduce_mean(error[1:horizon + 1])).numpy()
+               for horizon in [1, 10, 20, 50, 100, 200, 400, 598]}
 
-    return scalars, traj_ops
+    return scalars, prediction
 
 def run(checkpoint, data_path, num_trajectories):
     dataset = load_dataset_eval(
         path=data_path,
         split='test',
-        fields=['world_pos'],
-        add_history=True
+        fields=['velocity'],
+        add_history=False
     )
     model = core_model.EncodeProcessDecode(
-        output_dims=6,
+        output_dims=2,
         embed_dims=128,
-        num_layers=2,
+        num_layers=3,
         num_iterations=15,
         num_edge_types=1
     )
     model = cfd_model.CFDModel(model)
     build_model(model, dataset)
     model.load_weights(checkpoint, by_name=True)
+
+    Path(os.path.join(model_dir, 'results', 'cfd', os.path.split(checkpoint)[-1])).mkdir(exist_ok=True, parents=True)
     for i, trajectory in enumerate(dataset.take(num_trajectories)):
-        rmse_error, predicted_trajectory = evaluate(model, dataset)
-        data = {**trajectory, 'true_world_pos': trajectory['world_pos'], 'pred_world_pos': predicted_trajectory, 'errors': rmse_error}
+        rmse_error, predicted_trajectory = evaluate(model, trajectory)
+        print(f'RMSE Errors: {rmse_error}')
+
+        data = {**trajectory, 'true_velocity': trajectory['velocity'], 'pred_velocity': predicted_trajectory, 'errors': rmse_error}
         data = {k: to_numpy(v) for k, v in data.items()}
-        save_path = os.path.join(model_dir, 'results', os.path.split(checkpoint)[-1], f'{i:03d}.eval')
+        save_path = os.path.join(model_dir, 'results', 'cfd', os.path.split(checkpoint)[-1], f'{i:03d}.eval')
         with open(save_path, "wb") as fp:
             pickle.dump(data, fp)
+            print(f'Evaluation results saved in {save_path}')
 
 
 def main():
@@ -188,3 +195,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # avg_rmse()
