@@ -39,7 +39,7 @@ def plot_cfd(data, filename):
          faces = data[traj]['faces'][step]
          velocity = data[traj]['pred_velocity'][step]
          triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
-         axis.tripcolor(triang, velocity[:, 0], velocity[:, 1], vmin=vmin[0], vmax=vmax[0])
+         axis.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
          axis.triplot(triang, 'ko-', ms=0.5, lw=0.3)
          axis.set_title("Predicted")
          
@@ -53,7 +53,7 @@ def plot_cfd(data, filename):
          faces = data[traj]['faces'][step]
          velocity = data[traj]['gt_velocity'][step]
          triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
-         axis2.tripcolor(triang, velocity[:, 0], velocity[:, 1], vmin=vmin[0], vmax=vmax[0])
+         axis2.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
          axis2.triplot(triang, 'ko-', ms=0.5, lw=0.3)
          axis2.set_title("Ground Truth")
          
