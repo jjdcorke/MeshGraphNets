@@ -62,7 +62,7 @@ class CFDModel(Model):
         The loss function to use when training the model; the L2 distance
                 between the ground-truth velocity and the model prediction
             :param graph: MultiGraph; the graph representing the raw mesh
-            :param frame: dict; contains the ground-truth velocities
+            :param frame: dict; contains the ground-truth velocities and pressures
             :return: Tensor with shape (,) representing the loss value
 
         """
@@ -72,7 +72,16 @@ class CFDModel(Model):
         cur_velocity = frame['velocity']
         target_velocity = frame['target|velocity']
         target_velocity_change = target_velocity - cur_velocity
-        target_normalized = self._output_normalizer(target_velocity_change, training=True)
+        
+
+        #build target pressure change
+        cur_pressure = frame['pressure']
+        target_pressure = frame['target|pressure']
+        target_pressure_change = target_pressure - cur_pressure
+
+        target = tf.concat([target_velocity_change, target_pressure_change], -1)
+        target_normalized = self._output_normalizer(target, training=True)
+
 
         # build loss
         loss_mask = tf.cast(tf.logical_or(tf.equal(frame['node_type'][:,0], common.NodeType.NORMAL),
@@ -86,8 +95,10 @@ class CFDModel(Model):
         """Integrate model outputs."""
 
         output = self(graph, training = False)
-
-        velocity_update = self._output_normalizer.inverse(output)
+        update = self._output_normalizer.inverse(output)
+        velocity_update = update[0:1]
+        pressure = update[2]
         # integrate forward
         cur_velocity = frame['velocity']
-        return cur_velocity + velocity_update
+        return (cur_velocity + velocity_update), pressure
+
