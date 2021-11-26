@@ -34,7 +34,26 @@ class ClothModel(Model):
         # normalizer for the raw edge features before the encoder MLP
         self._edge_normalizer = normalization.Normalizer()
 
-    
+    def create_graph(self, frame, world_pos, prev_world_pos, senders, receivers):
+        # TODO: support for wind velocity
+
+        velocity = world_pos - prev_world_pos
+        node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
+
+        node_features = tf.concat([velocity, node_type], axis=-1)
+
+        # construct graph edges
+        relative_world_pos = tf.gather(world_pos, senders) - tf.gather(world_pos, receivers)
+        relative_mesh_pos = tf.gather(frame['mesh_pos'], senders) - tf.gather(frame['mesh_pos'], receivers)
+        edge_features = tf.concat([
+            relative_world_pos,
+            tf.norm(relative_world_pos, axis=-1, keepdims=True),
+            relative_mesh_pos,
+            tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
+
+        graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
+        return graph
+
     def call(self, graph, training=False):
         """
         Pass a graph through the model
@@ -53,7 +72,7 @@ class ClothModel(Model):
 
         return output
 
-    def loss(self, graph, frame):
+    def loss(self, frame, senders, receivers):
         """
         The loss function to use when training the model; the L2 distance
             between the ground-truth acceleration and the model prediction
@@ -61,22 +80,44 @@ class ClothModel(Model):
         :param frame: dict; contains the ground-truth positions
         :return: Tensor with shape (,) representing the loss value
         """
-        network_output = self(graph, training=True)
+        # build first model output
+        graph1 = self.create_graph(frame, frame['world_pos'], frame['prev|world_pos'], senders, receivers)
+        output1 = self(graph1, training=True)
 
-        # build target acceleration
-        cur_position = frame['world_pos']
-        prev_position = frame['prev|world_pos']
-        target_position = frame['target|world_pos']
-        target_acceleration = target_position - 2 * cur_position + prev_position
-        target_normalized = self._output_normalizer(target_acceleration, training=True)
+        # build target1 acceleration
+        target1_acceleration = frame['target1|world_pos'] - 2 * frame['world_pos'] + frame['prev|world_pos']
+        target1_normalized = self._output_normalizer(target1_acceleration, training=True)
+
+        # build predicted world_pos 1
+        pred1 = 2 * frame['world_pos'] + self._output_normalizer.inverse(output1) - frame['prev|world_pos']
+
+        # build second model output
+        graph2 = self.create_graph(frame, pred1, frame['world_pos'], senders, receivers)
+        output2 = self(graph2, training=True)
+
+        # build target2 acceleration
+        target2_acceleration = frame['target2|world_pos'] - 2 * frame['target1|world_pos'] + frame['world_pos']
+        target2_normalized = self._output_normalizer(target2_acceleration, training=True)
+
+        # build predicted world_pos 2
+        pred2 = 2 * pred1 + target2_acceleration + self._output_normalizer.inverse(output2) - frame['world_pos']
+
+        # build third model output
+        graph3 = self.create_graph(frame, pred2, pred1, senders, receivers)
+        output3 = self(graph3, training=True)
+
+        # build target3 acceleration
+        target3_acceleration = frame['target3|world_pos'] - 2 * frame['target2|world_pos'] + frame['target1|world_pos']
+        target3_normalized = self._output_normalizer(target3_acceleration, training=True)
 
         # build loss
         loss_mask = tf.cast(tf.equal(frame['node_type'][:, 0], common.NodeType.NORMAL), tf.float32)
-        error = tf.reduce_sum(tf.math.square(target_normalized - network_output), axis=1)
-        loss = tf.reduce_mean(error * loss_mask)
+        error1 = tf.reduce_sum(tf.math.square(target1_normalized - output1), axis=1)
+        error2 = tf.reduce_sum(tf.math.square(target2_normalized - output2), axis=1)
+        error3 = tf.reduce_sum(tf.math.square(target3_normalized - output3), axis=1)
+        loss = tf.reduce_mean((error1 + error2 + error3) / 3 * loss_mask)
 
         return loss
-
 
     @tf.function(experimental_compile=True)
     def predict(self, graph, frame):

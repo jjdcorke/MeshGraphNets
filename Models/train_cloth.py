@@ -40,48 +40,19 @@ try:
 except RuntimeError as e:
     print(e)
 
-def add_noise(field, scale):
-    noise = tf.random.normal(tf.shape(field), stddev=scale, dtype=tf.float32)
-    field += noise
-    return field
 
-def frame_to_graph(frame, wind=False):
-    """Builds input graph."""
-
-    # construct graph nodes
-    velocity = frame['world_pos'] - frame['prev|world_pos']
-    node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-
-    node_features = tf.concat([velocity, node_type], axis=-1)
-    if wind:
-        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
-        wind_velocities = add_noise(wind_velocities, scale=0.01)
-        node_features = tf.concat([node_features, wind_velocities], axis=-1)
-
-    # construct graph edges
+def frame_to_senders_and_receivers(frame):
     senders, receivers = common.triangles_to_edges(frame['cells'])
-    relative_world_pos = (tf.gather(frame['world_pos'], senders) -
-                          tf.gather(frame['world_pos'], receivers))
-    relative_mesh_pos = (tf.gather(frame['mesh_pos'], senders) -
-                         tf.gather(frame['mesh_pos'], receivers))
-    edge_features = tf.concat([
-        relative_world_pos,
-        tf.norm(relative_world_pos, axis=-1, keepdims=True),
-        relative_mesh_pos,
-        tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
-
     del frame['cells']
-
-    return node_features, edge_features, senders, receivers, frame
+    return frame, senders, receivers
 
 
 def build_model(model, optimizer, dataset, checkpoint=None):
     """Initialize the model"""
-    node_features, edge_features, senders, receivers, frame = next(iter(dataset))
-    graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
+    frame, senders, receivers = next(iter(dataset))
 
     # call the model once to process all input shapes
-    model.loss(graph, frame)
+    model.loss(frame, senders, receivers)
 
     # get the number of trainable parameters
     total = 0
@@ -115,23 +86,19 @@ def validation(model, dataset, num_trajectories=5):
     return {k: np.mean(v) for k, v in all_errors.items()}
 
 
-def train(num_steps=10000000, checkpoint=None, wind=False):
+def train(num_steps=10000000, checkpoint=None):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
-        fields=['world_pos'],
-        add_history=True,
-        noise_scale=0.003,
-        noise_gamma=0.1
+        fields=['world_pos']
     )
-    dataset = dataset.map(lambda frame: frame_to_graph(frame, wind=wind), num_parallel_calls=8)
+    dataset = dataset.map(lambda frame: frame_to_senders_and_receivers(frame), num_parallel_calls=8)
     dataset = dataset.prefetch(16)
 
     valid_dataset = load_dataset_eval(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='valid',
-        fields=['world_pos'],
-        add_history=True
+        fields=['world_pos']
     )
 
     model = core_model.EncodeProcessDecode(
@@ -158,14 +125,14 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
     @tf.function(experimental_compile=True)
-    def warmup(graph, frame):
-        loss = model.loss(graph, frame)
+    def warmup(frame, senders, receivers):
+        loss = model.loss(frame, senders, receivers)
         return loss
 
     @tf.function(experimental_compile=True)
-    def train_step(graph, frame):
+    def train_step(frame, senders, receivers):
         with tf.GradientTape() as tape:
-            loss = model.loss(graph, frame)
+            loss = model.loss(frame, senders, receivers)
 
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -176,13 +143,12 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     train_loop = tqdm(range(num_steps))
     moving_loss = 0
     for s in train_loop:
-        node_features, edge_features, senders, receivers, frame = next(dataset_iter)
-        graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
+        frame, senders, receivers = next(dataset_iter)
 
         if s < 1000:
-            loss = warmup(graph, frame)
+            loss = warmup(frame, senders, receivers)
         else:
-            loss = train_step(graph, frame)
+            loss = train_step(frame, senders, receivers)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
@@ -194,9 +160,10 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
         if s != 0 and s % 50000 == 0:
             filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
-            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_correction', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_correction', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
+        if s != 0 and s % 10000 == 0:
             # perform validation
             errors = validation(model, valid_dataset)
             with val_summary_writer.as_default():
