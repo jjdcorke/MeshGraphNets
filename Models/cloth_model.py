@@ -100,7 +100,7 @@ class ClothModel(Model):
         target2_normalized = self._output_normalizer(target2_acceleration, training=True)
 
         # build predicted world_pos 2
-        pred2 = 2 * pred1 + target2_acceleration + self._output_normalizer.inverse(output2) - frame['world_pos']
+        pred2 = 2 * pred1 + self._output_normalizer.inverse(output2) - frame['world_pos']
 
         # build third model output
         graph3 = self.create_graph(frame, pred2, pred1, senders, receivers)
