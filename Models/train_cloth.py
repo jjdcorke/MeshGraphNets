@@ -145,7 +145,7 @@ def train(num_steps=10000000, checkpoint=None):
     for s in train_loop:
         frame, senders, receivers = next(dataset_iter)
 
-        if s < 1000:
+        if s < 0:
             loss = warmup(frame, senders, receivers)
         else:
             loss = train_step(frame, senders, receivers)

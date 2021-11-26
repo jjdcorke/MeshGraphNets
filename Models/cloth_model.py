@@ -96,7 +96,7 @@ class ClothModel(Model):
         output2 = self(graph2, training=True)
 
         # build target2 acceleration
-        target2_acceleration = frame['target2|world_pos'] - 2 * frame['target1|world_pos'] + frame['world_pos']
+        target2_acceleration = frame['target2|world_pos'] - 2 * pred1 + frame['world_pos']
         target2_normalized = self._output_normalizer(target2_acceleration, training=True)
 
         # build predicted world_pos 2
@@ -107,7 +107,7 @@ class ClothModel(Model):
         output3 = self(graph3, training=True)
 
         # build target3 acceleration
-        target3_acceleration = frame['target3|world_pos'] - 2 * frame['target2|world_pos'] + frame['target1|world_pos']
+        target3_acceleration = frame['target3|world_pos'] - 2 * pred2 + pred1
         target3_normalized = self._output_normalizer(target3_acceleration, training=True)
 
         # build loss
