@@ -56,7 +56,7 @@ def frame_to_graph(frame, wind=False, wind_decode=False):
 
     wind_velocities = None
     if wind_decode:
-        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
+        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity'] / 20
     if wind:
         wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
         wind_velocities = add_noise(wind_velocities, scale=0.01)
@@ -122,7 +122,7 @@ def validation(model, dataset, num_trajectories=5):
 
 def train(num_steps=10000000, checkpoint=None, wind=False, wind_decode=False):
     dataset = load_dataset_train(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple_wind'),
         split='train',
         fields=['world_pos'],
         add_history=True,
@@ -133,7 +133,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False, wind_decode=False):
     dataset = dataset.prefetch(16)
 
     valid_dataset = load_dataset_eval(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple_wind'),
         split='valid',
         fields=['world_pos'],
         add_history=True
@@ -199,8 +199,8 @@ def train(num_steps=10000000, checkpoint=None, wind=False, wind_decode=False):
 
         if s != 0 and s % 50000 == 0:
             filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
-            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_windv2_long', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_windv2_long', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
             # perform validation
             errors = validation(model, valid_dataset)
