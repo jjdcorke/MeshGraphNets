@@ -74,12 +74,10 @@ class CFDModel(Model):
         target_velocity_change = target_velocity - cur_velocity
         
 
-        #build target pressure change
-        cur_pressure = frame['pressure']
+        #build target pressure
         target_pressure = frame['target|pressure']
-        target_pressure_change = target_pressure - cur_pressure
 
-        target = tf.concat([target_velocity_change, target_pressure_change], -1)
+        target = tf.concat([target_velocity_change, target_pressure], -1)
         target_normalized = self._output_normalizer(target, training=True)
 
 
