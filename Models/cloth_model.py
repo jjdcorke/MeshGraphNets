@@ -35,7 +35,7 @@ class ClothModel(Model):
         self._edge_normalizer = normalization.Normalizer()
 
     
-    def call(self, graph, training=False):
+    def call(self, graph, wind_velocities=None, training=False):
         """
         Pass a graph through the model
         :param graph: MultiGraph; the graph representing the raw mesh
@@ -49,11 +49,11 @@ class ClothModel(Model):
         graph = core_model.MultiGraph(new_node_features, new_edge_sets)
 
         # pass through the encoder-processor-decoder architecture
-        output = self.model(graph, training=training)
+        output = self.model(graph, wind_velocities, training=training)
 
         return output
 
-    def loss(self, graph, frame):
+    def loss(self, graph, frame, wind_velocities=None):
         """
         The loss function to use when training the model; the L2 distance
             between the ground-truth acceleration and the model prediction
@@ -61,7 +61,7 @@ class ClothModel(Model):
         :param frame: dict; contains the ground-truth positions
         :return: Tensor with shape (,) representing the loss value
         """
-        network_output = self(graph, training=True)
+        network_output = self(graph, wind_velocities, training=True)
 
         # build target acceleration
         cur_position = frame['world_pos']

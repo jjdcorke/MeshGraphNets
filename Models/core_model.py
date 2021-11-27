@@ -179,16 +179,19 @@ class EncodeProcessDecode(Model):
 
         return MultiGraph(node_features, edge_sets)
 
-    def _decoder(self, graph):
+    def _decoder(self, graph, wind_velocities=None):
         """
         Readout of the final node features
         :param graph: MultiGraph; the graph after all message-passing iterations
         :return: Tensor with shape (n, d), where n is the number of nodes and d
                  is the number of output dims; represents the node update
         """
-        return self.node_decoder(graph.node_features)
+        if wind_velocities is not None:
+            return self.node_decoder(graph.node_features, wind_velocities)
+        else:
+            return self.node_decoder(graph.node_features)
  
-    def call(self, graph, training=False):
+    def call(self, graph, wind_velocities=None, training=False):
         """
         Pass a graph through the model
         :param graph: MultiGraph; represents the mesh with raw node and edge features
@@ -199,4 +202,4 @@ class EncodeProcessDecode(Model):
         graph = self._encoder(graph)
         for i in range(self.num_iterations):
             graph = self.mp_blocks[i](graph)
-        return self._decoder(graph)
+        return self._decoder(graph, wind_velocities)

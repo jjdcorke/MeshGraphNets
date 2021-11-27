@@ -45,7 +45,7 @@ def add_noise(field, scale):
     field += noise
     return field
 
-def frame_to_graph(frame, wind=False):
+def frame_to_graph(frame, wind=False, wind_decode=False):
     """Builds input graph."""
 
     # construct graph nodes
@@ -53,10 +53,15 @@ def frame_to_graph(frame, wind=False):
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
 
     node_features = tf.concat([velocity, node_type], axis=-1)
+
+    wind_velocities = None
+    if wind_decode:
+        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
     if wind:
         wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
         wind_velocities = add_noise(wind_velocities, scale=0.01)
         node_features = tf.concat([node_features, wind_velocities], axis=-1)
+    
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
@@ -72,16 +77,16 @@ def frame_to_graph(frame, wind=False):
 
     del frame['cells']
 
-    return node_features, edge_features, senders, receivers, frame
+    return node_features, edge_features, senders, receivers, frame, wind_velocities
 
 
 def build_model(model, optimizer, dataset, checkpoint=None):
     """Initialize the model"""
-    node_features, edge_features, senders, receivers, frame = next(iter(dataset))
+    node_features, edge_features, senders, receivers, frame, wind_velocities = next(iter(dataset))
     graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
     # call the model once to process all input shapes
-    model.loss(graph, frame)
+    model.loss(graph, frame, wind_velocities=wind_velocities)
 
     # get the number of trainable parameters
     total = 0
@@ -115,7 +120,7 @@ def validation(model, dataset, num_trajectories=5):
     return {k: np.mean(v) for k, v in all_errors.items()}
 
 
-def train(num_steps=10000000, checkpoint=None, wind=False):
+def train(num_steps=10000000, checkpoint=None, wind=False, wind_decode=False):
     dataset = load_dataset_train(
         path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
         split='train',
@@ -124,7 +129,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
         noise_scale=0.003,
         noise_gamma=0.1
     )
-    dataset = dataset.map(lambda frame: frame_to_graph(frame, wind=wind), num_parallel_calls=8)
+    dataset = dataset.map(lambda frame: frame_to_graph(frame, wind=wind, wind_decode=wind_decode), num_parallel_calls=8)
     dataset = dataset.prefetch(16)
 
     valid_dataset = load_dataset_eval(
@@ -158,14 +163,14 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
     @tf.function(experimental_compile=True)
-    def warmup(graph, frame):
-        loss = model.loss(graph, frame)
+    def warmup(graph, frame, wind_velocities=None):
+        loss = model.loss(graph, frame, wind_velocities=wind_velocities)
         return loss
 
     @tf.function(experimental_compile=True)
-    def train_step(graph, frame):
+    def train_step(graph, frame, wind_velocities=None):
         with tf.GradientTape() as tape:
-            loss = model.loss(graph, frame)
+            loss = model.loss(graph, frame, wind_velocities=wind_velocities)
 
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -176,13 +181,13 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     train_loop = tqdm(range(num_steps))
     moving_loss = 0
     for s in train_loop:
-        node_features, edge_features, senders, receivers, frame = next(dataset_iter)
+        node_features, edge_features, senders, receivers, frame, wind_velocities = next(dataset_iter)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
         if s < 1000:
-            loss = warmup(graph, frame)
+            loss = warmup(graph, frame, wind_velocities=wind_velocities)
         else:
-            loss = train_step(graph, frame)
+            loss = train_step(graph, frame, wind_velocities=wind_velocities)
 
         moving_loss = 0.98 * moving_loss + 0.02 * loss
 
@@ -207,7 +212,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
 def main():
 
-    train()
+    train(wind_decode=True)
 
 
 if __name__ == '__main__':
