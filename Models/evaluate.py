@@ -41,13 +41,17 @@ except RuntimeError as e:
 model_dir = os.path.dirname(__file__)
 
 
-def frame_to_graph(frame):
+def frame_to_graph(frame, wind=False):
     """Builds input graph."""
 
     # construct graph nodes
     velocity = frame['world_pos'] - frame['prev|world_pos']
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
+
     node_features = tf.concat([velocity, node_type], axis=-1)
+    if wind:
+        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
+        node_features = tf.concat([node_features, wind_velocities], axis=-1)
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
@@ -66,11 +70,11 @@ def frame_to_graph(frame):
     return node_features, edge_features, senders, receivers, frame
 
 
-def build_model(model, dataset):
+def build_model(model, dataset, wind=False):
     """Initialize the model"""
     traj = next(iter(dataset))
     frame = {k: v[0] for k, v in traj.items()}
-    node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
+    node_features, edge_features, senders, receivers, frame = frame_to_graph(frame, wind=wind)
     graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
     # call the model once to process all input shapes
@@ -83,7 +87,7 @@ def build_model(model, dataset):
     print(f'Total trainable parameters: {total}')
 
 
-def rollout(model, initial_frame, num_steps):
+def rollout(model, initial_frame, num_steps, wind=False):
     """Rollout a model trajectory."""
     mask = tf.equal(initial_frame['node_type'], common.NodeType.NORMAL)
 
@@ -94,7 +98,7 @@ def rollout(model, initial_frame, num_steps):
     rollout_loop = tqdm(range(num_steps))
     for _ in rollout_loop:
         frame = {**initial_frame, 'prev|world_pos': prev_pos, 'world_pos': curr_pos}
-        node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
+        node_features, edge_features, senders, receivers, frame = frame_to_graph(frame, wind=wind)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
         next_pos = model.predict(graph, frame)
@@ -118,7 +122,7 @@ def to_numpy(t):
 
 def avg_rmse():
     results_path = os.path.join(model_dir, 'results')
-    results_prefixes = ['og_long-step9450000-loss0.03564.hdf5']
+    results_prefixes = ['og_long_noise-step9950000-loss0.05927.hdf5']
 
     for prefix in results_prefixes:
         all_errors = []
@@ -137,9 +141,9 @@ def avg_rmse():
             print(prefix, k, np.mean(v))
 
 
-def evaluate(checkpoint_file, num_trajectories):
+def evaluate(checkpoint_file, num_trajectories, wind=False):
     dataset = load_dataset_eval(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple_wind'),
         split='test',
         fields=['world_pos'],
         add_history=True
@@ -155,14 +159,14 @@ def evaluate(checkpoint_file, num_trajectories):
     model = cloth_model.ClothModel(model)
 
     # build the model
-    build_model(model, dataset)
+    build_model(model, dataset, wind=wind)
 
     model.load_weights(checkpoint_file, by_name=True)
 
     Path(os.path.join(model_dir, 'results', os.path.split(checkpoint_file)[-1])).mkdir(exist_ok=True)
     for i, trajectory in enumerate(dataset.take(num_trajectories)):
         initial_frame = {k: v[0] for k, v in trajectory.items()}
-        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0])
+        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0], wind=wind)
 
         error = tf.reduce_mean(tf.square(predicted_trajectory - trajectory['world_pos']), axis=-1)
         rmse_errors = {f'{horizon}_step_error': tf.math.sqrt(tf.reduce_mean(error[1:horizon + 1])).numpy()
@@ -179,8 +183,8 @@ def evaluate(checkpoint_file, num_trajectories):
 
 
 def main():
-    # evaluate(os.path.join(model_dir, 'checkpoints/lrga_long-step10150000-loss0.03587.hdf5'), 100)
-    avg_rmse()
+    evaluate(os.path.join(model_dir, 'checkpoints/wind_long-step4100000-loss0.06073.hdf5'), 100, wind=True)
+    # avg_rmse()
 
 
 if __name__ == '__main__':
