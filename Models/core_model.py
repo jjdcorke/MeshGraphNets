@@ -33,7 +33,7 @@ class MLP(Model):
 
         if layer_norm:
             self.dense_layers.append(LayerNormalization())
-    
+
     def call(self, x, training=False):
         """
         Pass the input x through the MLP
@@ -52,7 +52,7 @@ class GraphNetBlock(Model):
     """
     A message-passing block
     """
-  
+
     def __init__(self, embed_dims, num_layers, num_edge_types=2):
         """
         Create a message-passing block
@@ -70,7 +70,7 @@ class GraphNetBlock(Model):
 
         # separate MLPs for the edge update rules
         self.edge_updates = [MLP([embed_dims] * num_layers) for _ in range(num_edge_types)]
-   
+
     def _update_edge_features(self, node_features, edge_set, index):
         """
         Get the new edge features by aggregating the features of the
@@ -106,7 +106,7 @@ class GraphNetBlock(Model):
                                                          edge_set.receivers,
                                                          num_nodes))
         return self.node_update(tf.concat(features, axis=-1))
-   
+
     def call(self, graph, training=False):
         """
         Perform the message-passing on the graph
@@ -136,7 +136,7 @@ class EncodeProcessDecode(Model):
     The composite 3-part architecture consisting of an encoder, a processor,
         and a decoder
     """
- 
+
     def __init__(self, output_dims, embed_dims, num_layers, num_iterations, num_edge_types=2):
         """
         Create a model
@@ -164,7 +164,7 @@ class EncodeProcessDecode(Model):
 
         # decoder MLPs
         self.node_decoder = MLP([embed_dims] * (num_layers - 1) + [output_dims], layer_norm=False)
-   
+
     def _encoder(self, graph):
         """
         Map the input features onto a latent space for processing
@@ -187,10 +187,11 @@ class EncodeProcessDecode(Model):
                  is the number of output dims; represents the node update
         """
         if wind_velocities is not None:
-            return self.node_decoder(graph.node_features, wind_velocities)
+            decoder_input = tf.concat([graph.node_features, wind_velocities], axis=1)
+            return self.node_decoder(decoder_input)
         else:
             return self.node_decoder(graph.node_features)
- 
+
     def call(self, graph, wind_velocities=None, training=False):
         """
         Pass a graph through the model

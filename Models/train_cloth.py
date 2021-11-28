@@ -61,7 +61,7 @@ def frame_to_graph(frame, wind=False, wind_decode=False):
         wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity']
         wind_velocities = add_noise(wind_velocities, scale=0.01)
         node_features = tf.concat([node_features, wind_velocities], axis=-1)
-    
+
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
