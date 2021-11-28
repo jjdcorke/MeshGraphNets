@@ -41,7 +41,7 @@ except RuntimeError as e:
 model_dir = os.path.dirname(__file__)
 
 
-def frame_to_graph(frame):
+def frame_to_graph(frame, wind_decode=False):
     """Builds input graph."""
 
     # construct graph nodes
@@ -49,6 +49,10 @@ def frame_to_graph(frame):
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
     node_features = tf.concat([velocity, node_type], axis=-1)
 
+    wind_velocities = None
+    if wind_decode:
+        wind_velocities = tf.ones([len(velocity), len(frame['wind_velocity'])]) * frame['wind_velocity'] / 20
+    
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
     relative_world_pos = (tf.gather(frame['world_pos'], senders) -
@@ -63,7 +67,7 @@ def frame_to_graph(frame):
 
     del frame['cells']
 
-    return node_features, edge_features, senders, receivers, frame
+    return node_features, edge_features, senders, receivers, frame, wind_velocities
 
 
 def build_model(model, dataset):
@@ -83,7 +87,7 @@ def build_model(model, dataset):
     print(f'Total trainable parameters: {total}')
 
 
-def rollout(model, initial_frame, num_steps):
+def rollout(model, initial_frame, num_steps, wind_decode=False):
     """Rollout a model trajectory."""
     mask = tf.equal(initial_frame['node_type'], common.NodeType.NORMAL)
 
@@ -94,10 +98,10 @@ def rollout(model, initial_frame, num_steps):
     rollout_loop = tqdm(range(num_steps))
     for _ in rollout_loop:
         frame = {**initial_frame, 'prev|world_pos': prev_pos, 'world_pos': curr_pos}
-        node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
+        node_features, edge_features, senders, receivers, frame, wind_velocities = frame_to_graph(frame, wind_decode=wind_decode)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
 
-        next_pos = model.predict(graph, frame)
+        next_pos = model.predict(graph, frame, wind_velocities)
         next_pos = tf.where(mask, next_pos, curr_pos)
         trajectory.append(curr_pos)
 

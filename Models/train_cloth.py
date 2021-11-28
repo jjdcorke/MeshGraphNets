@@ -105,13 +105,13 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def validation(model, dataset, num_trajectories=5):
+def validation(model, dataset, num_trajectories=5, wind_decode=False):
     print('\nEvaluating...')
     horizons = [1, 10, 20, 50, 100, 200, 398]
     all_errors = {horizon: [] for horizon in horizons}
     for i, trajectory in enumerate(dataset.take(num_trajectories)):
         initial_frame = {k: v[0] for k, v in trajectory.items()}
-        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0])
+        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0], wind_decode=wind_decode)
 
         error = tf.reduce_mean(tf.square(predicted_trajectory - trajectory['world_pos']), axis=-1)
         for horizon in horizons:
@@ -203,7 +203,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False, wind_decode=False):
             np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_windv2_long', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
             # perform validation
-            errors = validation(model, valid_dataset)
+            errors = validation(model, valid_dataset, wind_decode=wind_decode)
             with val_summary_writer.as_default():
                 for k, v in errors.items():
                     tf.summary.scalar(f'validation {k}-rmse', v, step=s)

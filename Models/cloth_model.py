@@ -79,7 +79,7 @@ class ClothModel(Model):
 
 
     @tf.function(experimental_compile=True)
-    def predict(self, graph, frame):
+    def predict(self, graph, frame, wind_velocities=None):
         """
         Predict the new position of the mesh after a single time-step
         :param graph: MultiGraph; the graph representing the raw mesh
@@ -87,7 +87,7 @@ class ClothModel(Model):
         :return: Tensor with shape (n, d), where n is the number of nodes and
                  d is the number of dimensions in world-space.
         """
-        output = self(graph, training=False)
+        output = self(graph, wind_velocities=wind_velocities, training=False)
         acceleration = self._output_normalizer.inverse(output)
 
         # integrate forward
