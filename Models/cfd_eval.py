@@ -94,19 +94,10 @@ def rollout(model, initial_frame, num_steps):
     curr_velocity = initial_frame['velocity']
     curr_pressure = initial_frame['pressure']
     trajectory = []
+    pressures = []
 
     rollout_loop = tqdm(range(num_steps))
     for _ in rollout_loop:
-        frame = {**initial_frame, 'velocity': curr_velocity}
-        node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
-        graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
-
-        next_velocity = model.predict(graph, frame)
-        next_velocity = tf.where(mask, next_velocity, curr_velocity)
-        trajectory.append(curr_velocity)
-
-        curr_velocity = next_velocity
-
         frame = {**initial_frame, 'velocity': curr_velocity, 'pressure': curr_pressure}
         node_features, edge_features, senders, receivers, frame = frame_to_graph(frame)
         graph = core_model.MultiGraph(node_features, edge_sets=[core_model.EdgeSet(edge_features, senders, receivers)])
@@ -114,9 +105,12 @@ def rollout(model, initial_frame, num_steps):
         next_velocity, next_pressure = model.predict(graph, frame)
         next_velocity = tf.where(mask, next_velocity, curr_velocity)
         next_pressure = tf.where(mask, next_pressure, curr_pressure)
-        trajectory.append((curr_velocity, curr_pressure))
+        trajectory.append(curr_velocity)
+        pressures.append(curr_pressure)
+
         curr_velocity, curr_pressure = next_velocity, next_pressure
-    return tf.stack(trajectory)
+
+    return tf.stack(trajectory), tf.stack(pressures)
 
 
 def to_numpy(t):
@@ -131,7 +125,7 @@ def to_numpy(t):
 
 def avg_rmse():
     results_path = os.path.join(model_dir, 'results', 'cfd')
-    results_prefixes = ['og_long-step4200000-loss0.01691.hdf5']
+    results_prefixes = ['og_pressure-step2450000-loss0.01798.hdf5']
 
     for prefix in results_prefixes:
         all_errors = []
@@ -155,17 +149,18 @@ def evaluate(model, inputs):
 
     initial_state = {k: v[0] for k, v in inputs.items()}
     num_steps = inputs['cells'].shape[0]
-    prediction = rollout(model, initial_state, num_steps)
-    velocity_prediction = prediction[:][0]
-    pressure_prediction = prediction[:][1]
+    velocity_prediction, pressure_prediction = rollout(model, initial_state, num_steps)
 
-    diff = tf.concat(velocity_prediction - inputs['velocity'], 
-                     pressure_prediction - inputs['pressure'], -1)
+    # diff = tf.concat([velocity_prediction - inputs['velocity'],
+    #                   pressure_prediction - inputs['pressure']], -1)
+
+    # only calculate error in velocity
+    diff = velocity_prediction - inputs['velocity']
 
     error = tf.reduce_mean(diff**2, axis=-1)
     scalars = {f'{horizon}_step_error': tf.math.sqrt(tf.reduce_mean(error[1:horizon + 1])).numpy()
                for horizon in [1, 10, 20, 50, 100, 200, 400, 598]}
-    return scalars, (velocity_prediction, pressure_prediction) 
+    return scalars, (velocity_prediction, pressure_prediction)
 
 def run(checkpoint, data_path, num_trajectories):
     dataset = load_dataset_eval(
@@ -175,7 +170,7 @@ def run(checkpoint, data_path, num_trajectories):
         add_history=False
     )
     model = core_model.EncodeProcessDecode(
-        output_dims=2,
+        output_dims=3,
         embed_dims=128,
         num_layers=3,
         num_iterations=15,

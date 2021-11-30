@@ -72,7 +72,7 @@ class CFDModel(Model):
         cur_velocity = frame['velocity']
         target_velocity = frame['target|velocity']
         target_velocity_change = target_velocity - cur_velocity
-        
+
 
         #build target pressure
         target_pressure = frame['target|pressure']
@@ -94,9 +94,8 @@ class CFDModel(Model):
 
         output = self(graph, training = False)
         update = self._output_normalizer.inverse(output)
-        velocity_update = update[0:1]
-        pressure = update[2]
+        velocity_update = update[:, :2]
+        pressure = update[:, 2:]
         # integrate forward
         cur_velocity = frame['velocity']
         return (cur_velocity + velocity_update), pressure
-
