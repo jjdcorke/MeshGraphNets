@@ -100,13 +100,13 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def validation(model, dataset, num_trajectories=5):
+def validation(model, dataset, num_trajectories=5, wind=False):
     print('\nEvaluating...')
     horizons = [1, 10, 20, 50, 100, 200, 398]
     all_errors = {horizon: [] for horizon in horizons}
     for i, trajectory in enumerate(dataset.take(num_trajectories)):
         initial_frame = {k: v[0] for k, v in trajectory.items()}
-        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0])
+        predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0], wind=wind)
 
         error = tf.reduce_mean(tf.square(predicted_trajectory - trajectory['world_pos']), axis=-1)
         for horizon in horizons:
@@ -117,7 +117,7 @@ def validation(model, dataset, num_trajectories=5):
 
 def train(num_steps=10000000, checkpoint=None, wind=False):
     dataset = load_dataset_train(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple_wind'),
         split='train',
         fields=['world_pos'],
         add_history=True,
@@ -128,7 +128,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     dataset = dataset.prefetch(16)
 
     valid_dataset = load_dataset_eval(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple_wind'),
         split='valid',
         fields=['world_pos'],
         add_history=True
@@ -194,11 +194,12 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
         if s != 0 and s % 50000 == 0:
             filename = f'weights-step{s:07d}-loss{moving_loss:.5f}.hdf5'
-            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', filename))
-            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_og_noise', f'{filename}_optimizer.npy'), optimizer.get_weights())
+            model.save_weights(os.path.join(os.path.dirname(__file__), 'checkpoints_wind_lrga', filename))
+            np.save(os.path.join(os.path.dirname(__file__), 'checkpoints_wind_lrga', f'{filename}_optimizer.npy'), optimizer.get_weights())
 
+        if s != 0 and s % 10000 == 0:
             # perform validation
-            errors = validation(model, valid_dataset)
+            errors = validation(model, valid_dataset, wind=wind)
             with val_summary_writer.as_default():
                 for k, v in errors.items():
                     tf.summary.scalar(f'validation {k}-rmse', v, step=s)
@@ -207,7 +208,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
 def main():
 
-    train()
+    train(wind=True)
 
 
 if __name__ == '__main__':
