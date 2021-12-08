@@ -3,7 +3,7 @@ from pathlib import Path
 import tensorflow as tf
 from multiprocessing import Process, Queue, cpu_count
 import argparse
-import time
+import numpy as np
 
 class OBJ:
     def __init__(self, fp):
@@ -28,10 +28,24 @@ class OBJ:
 
 
 def process_trajectory(path):
-    json_file = list(Path(path).glob("*.json"))
-    assert len(json_file) == 1, "{} json config files are in the directory {}!".format(len(json_file), path)
-    with open(json_file[0], 'r') as fp:
+    conf_path = Path(path).joinpath("conf.json")
+    wind_path = Path(path).joinpath("wind.json")
+    with open(conf_path, 'r') as fp:
         conf = json.load(fp)
+    if wind_path.is_file():
+        with open(wind_path, 'r') as fp:
+            wind = json.load(fp)
+        wind_v = []
+        print(wind_v)
+        key_prev = 0
+        for w in wind["trajectories"]:
+            for i in range(w[0] - key_prev):
+                wind_v.append([w[1]])
+            key_prev = w[0]
+        wind_v.append(wind_v[-1])
+        print(np.array(wind_v).shape)
+    else:
+        wind = None
     obj_files = sorted(Path(path).glob("*.obj"))
     wind_velocity = []
     world_pos = []
@@ -45,6 +59,8 @@ def process_trajectory(path):
             for handle in conf["handles"][0]["nodes"]:
                 nodes[handle] = [3] # NodeType HANDLE
             node_type.append(nodes) 
+    if wind:
+        wind_velocity = wind_v
     world_pos = tf.constant(world_pos)
     wind_velocity = tf.constant(wind_velocity)
     node_type = tf.constant(node_type)
