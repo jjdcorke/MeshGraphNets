@@ -19,6 +19,7 @@
 import os
 import pickle
 from pathlib import Path
+import argparse
 
 from tqdm import tqdm
 import numpy as np
@@ -141,9 +142,9 @@ def avg_rmse():
             print(prefix, k, np.mean(v))
 
 
-def evaluate(checkpoint_file, num_trajectories, wind=False):
+def evaluate(checkpoint_file, dataset_path, num_trajectories, wind=False):
     dataset = load_dataset_eval(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple_wind'),
+        path=dataset_path,
         split='test',
         fields=['world_pos'],
         add_history=True
@@ -163,7 +164,7 @@ def evaluate(checkpoint_file, num_trajectories, wind=False):
 
     model.load_weights(checkpoint_file, by_name=True)
 
-    Path(os.path.join(model_dir, 'results', os.path.split(checkpoint_file)[-1])).mkdir(exist_ok=True)
+    Path(os.path.join(model_dir, 'results')).mkdir(exist_ok=True)
     for i, trajectory in enumerate(dataset.take(num_trajectories)):
         initial_frame = {k: v[0] for k, v in trajectory.items()}
         predicted_trajectory = rollout(model, initial_frame, trajectory['cells'].shape[0], wind=wind)
@@ -176,15 +177,20 @@ def evaluate(checkpoint_file, num_trajectories, wind=False):
         data = {**trajectory, 'true_world_pos': trajectory['world_pos'], 'pred_world_pos': predicted_trajectory, 'errors': rmse_errors}
         data = {k: to_numpy(v) for k, v in data.items()}
 
-        save_path = os.path.join(model_dir, 'results', os.path.split(checkpoint_file)[-1], f'{i:03d}.eval')
+        save_path = os.path.join(model_dir, 'results', f'{i:03d}.eval')
         with open(save_path, 'wb') as f:
             pickle.dump(data, f)
             print(f'Evaluation results saved in {save_path}')
 
 
 def main():
-    evaluate(os.path.join(model_dir, 'checkpoints/wind_long-step4100000-loss0.06073.hdf5'), 100, wind=True)
-    # avg_rmse()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("checkpoint", help="Path to checkpoint file")
+    parser.add_argument("data_path", help="Path to dataset")
+    parser.add_argument("num_trajectories", type=int, help="Number of trajectories to evaluate")
+    parser.add_argument("--wind", "-w", action="store_true", help="Toggle for model to evaluate using diffrent wind velocities")
+    args = parser.parse_args()
+    evaluate(args.checkpoint, args.data_path, args.num_trajectories, wind=args.wind)
 
 
 if __name__ == '__main__':

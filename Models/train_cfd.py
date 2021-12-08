@@ -18,6 +18,7 @@
 
 import os
 import pickle
+import argparse
 
 from tqdm import tqdm
 import numpy as np
@@ -85,9 +86,9 @@ def build_model(model, optimizer, dataset, checkpoint=None):
         model.load_weights(checkpoint, by_name=True)
 
 
-def train(num_steps=10000000, checkpoint = None):
+def train(data_path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_flow'),num_steps=10000000, checkpoint = None):
     dataset = load_dataset_train(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_flow'),
+        path=data_path,
         split='train',
         fields=['velocity'],
         add_history=False,
@@ -115,7 +116,6 @@ def train(num_steps=10000000, checkpoint = None):
 
     # build the model
     build_model(model, optimizer, dataset, checkpoint = checkpoint)
-    # build_model(model, optimizer, dataset, checkpoint='checkpoints/weights-step2700000-loss0.0581.hdf5')
 
     #@tf.function(jit_compile=True)
     @tf.function(experimental_relax_shapes=True)
@@ -162,8 +162,13 @@ def train(num_steps=10000000, checkpoint = None):
 
 
 def main():
-    
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint", "-c", help="Path to checkpoint file used to resume training")
+    parser.add_argument("data_path", help="Path to dataset")
+    parser.add_argument("num_steps", type=int, help="Number of itterations to train (default :1e6)")
+    args = parser.parse_args()
+
+    train(args.data_path, num_steps=args.num_steps, checkpoint=args.checkpoint)
 
 
 if __name__ == '__main__':

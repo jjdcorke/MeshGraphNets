@@ -18,6 +18,7 @@
 
 import os
 import pickle
+import argparse
 
 from tqdm import tqdm
 import numpy as np
@@ -115,9 +116,9 @@ def validation(model, dataset, num_trajectories=5):
     return {k: np.mean(v) for k, v in all_errors.items()}
 
 
-def train(num_steps=10000000, checkpoint=None, wind=False):
+def train(data_path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'), num_steps=10000000, checkpoint=None, wind=False):
     dataset = load_dataset_train(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=data_path,
         split='train',
         fields=['world_pos'],
         add_history=True,
@@ -128,7 +129,7 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
     dataset = dataset.prefetch(16)
 
     valid_dataset = load_dataset_eval(
-        path=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'),
+        path=data_path,
         split='valid',
         fields=['world_pos'],
         add_history=True
@@ -206,8 +207,13 @@ def train(num_steps=10000000, checkpoint=None, wind=False):
 
 
 def main():
-
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint", "-c", default=None, help="Path to checkpoint file used to resume training")
+    parser.add_argument("data_path", default=os.path.join(os.path.dirname(__file__), 'data', 'flag_simple'), help="Path to dataset")
+    parser.add_argument("num_steps", type=int, default=1000000, help="Number of itterations to train (default :1e6)")
+    parser.add_argument("--wind", "-w", action="store_true", help="Toggle for model to train using diffrent wind velocities")
+    args = parser.parse_args()
+    train(checkpoint=args.checkpoint, data_path=args.data_path, num_steps=args.num_steps, wind=args.wind)
 
 
 if __name__ == '__main__':
