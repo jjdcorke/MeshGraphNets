@@ -46,7 +46,7 @@ def frame_to_graph(frame):
 
     # construct graph nodes
     node_type = tf.one_hot(frame['node_type'][:, 0], common.NodeType.SIZE)
-    node_features = tf.concat([frame['velocity'], node_type], axis=-1)
+    node_features = tf.concat([frame['velocity'], frame['pressure'], node_type], axis=-1)
 
     # construct graph edges
     senders, receivers = common.triangles_to_edges(frame['cells'])
@@ -90,7 +90,7 @@ def train(data_path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_fl
     dataset = load_dataset_train(
         path=data_path,
         split='train',
-        fields=['velocity'],
+        fields=['velocity', 'pressure'],
         add_history=False,
         noise_scale=0.02,
         noise_gamma=1.0
@@ -100,7 +100,7 @@ def train(data_path=os.path.join(os.path.dirname(__file__), 'data', 'cylinder_fl
 
 
     model = core_model.EncodeProcessDecode(
-        output_dims=2,
+        output_dims=3,
         embed_dims=128,
         num_layers=3,
         num_iterations=15,
